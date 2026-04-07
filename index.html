@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>MetaPelet</title>
+    <style>
+        body {
+            background: #f5f7fa;
+            font-family: Arial;
+            text-align: center;
+            margin-top: 80px;
+        }
+
+        h1 {
+            font-size: 32px;
+            color: #333;
+            margin-bottom: 30px;
+        }
+
+        .fields {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 30px;
+        }
+
+        .fields input {
+            font-size: 20px;
+            padding: 10px 20px;
+            border: 2px solid #ddd;
+            border-radius: 14px;
+            outline: none;
+            text-align: center;
+            width: 260px;
+            color: #333;
+            background: white;
+        }
+
+        .fields input:focus { border-color: #4CAF50; }
+
+        #btn {
+            font-size: 24px;
+            padding: 20px 40px;
+            border-radius: 20px;
+            border: none;
+            background: #4CAF50;
+            color: white;
+            cursor: pointer;
+            display: block;
+            margin: 0 auto;
+            transition: background 0.2s;
+        }
+
+        #btn.active { background: #e53935; }   /* красный — диалог идёт */
+        #btn:hover  { filter: brightness(1.08); }
+
+        #status {
+            margin-top: 24px;
+            font-size: 20px;
+            color: #555;
+            min-height: 30px;
+        }
+    </style>
+</head>
+<body>
+
+<h1 id="greeting">Привет 💛</h1>
+
+<div class="fields">
+    <input
+        id="name-input"
+        type="text"
+        placeholder="Как вас зовут?"
+        oninput="onNameInput()"
+    />
+    <input
+        id="age-input"
+        type="number"
+        min="1"
+        max="120"
+        placeholder="Сколько вам лет?"
+        oninput="onAgeInput()"
+    />
+</div>
+
+<button id="btn" onclick="toggleDialog()">Поговори со мной</button>
+
+<p id="status"></p>
+
+<script>
+    // ── user_id ──────────────────────────────────────────────
+    function getUserId() {
+        let id = localStorage.getItem("metapelet_user_id");
+        if (!id) {
+            id = "user_" + Math.random().toString(36).slice(2, 10);
+            localStorage.setItem("metapelet_user_id", id);
+        }
+        return id;
+    }
+    const USER_ID = getUserId();
+
+    // ── имя и возраст ─────────────────────────────────────────
+    let userName = localStorage.getItem("metapelet_user_name") || "";
+    let userAge  = localStorage.getItem("metapelet_user_age")  || "";
+
+    document.getElementById("name-input").value = userName;
+    document.getElementById("age-input").value  = userAge;
+
+    function onNameInput() {
+        userName = document.getElementById("name-input").value.trim();
+        localStorage.setItem("metapelet_user_name", userName);
+        document.getElementById("greeting").textContent =
+            userName ? `Привет, ${userName} 💛` : "Привет 💛";
+    }
+
+    function onAgeInput() {
+        userAge = document.getElementById("age-input").value.trim();
+        localStorage.setItem("metapelet_user_age", userAge);
+    }
+
+    // ── состояние диалога ─────────────────────────────────────
+    let dialogActive  = false;
+    let recognition   = null;
+
+    function setStatus(text) {
+        document.getElementById("status").textContent = text;
+    }
+
+    function setBtn(active) {
+        const btn = document.getElementById("btn");
+        if (active) {
+            btn.textContent = "Завершить разговор";
+            btn.classList.add("active");
+        } else {
+            btn.textContent = "Поговори со мной";
+            btn.classList.remove("active");
+        }
+    }
+
+    // ── запуск / остановка ────────────────────────────────────
+    function toggleDialog() {
+        if (dialogActive) {
+            stopDialog();
+        } else {
+            startDialog();
+        }
+    }
+
+    function startDialog() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            alert("Микрофон не поддерживается. Откройте в Chrome.");
+            return;
+        }
+
+        dialogActive = true;
+        setBtn(true);
+        listenOnce();  // запускаем первый цикл
+    }
+
+    function stopDialog() {
+        dialogActive = false;
+        setBtn(false);
+        setStatus("Диалог завершён");
+
+        if (recognition) {
+            recognition.abort();
+            recognition = null;
+        }
+    }
+
+    // ── один цикл: слушаем → думаем → говорим → повтор ───────
+    function listenOnce() {
+        if (!dialogActive) return;
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
+        recognition.lang = "ru-RU";
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        setStatus("Слушаю...");
+        recognition.start();
+
+        // пользователь сказал что-то
+        recognition.onresult = async function(event) {
+            const userMessage = event.results[0][0].transcript;
+            recognition = null;
+            setStatus("Думаю...");
+
+            try {
+                const response = await fetch("/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        message: userMessage,
+                        user_id: USER_ID,
+                        name:    userName,
+                        age:     userAge
+                    })
+                });
+
+                if (!response.ok) throw new Error("Сервер не ответил");
+
+                const data = await response.json();
+                setStatus("Говорю...");
+
+                // После окончания речи — снова слушаем
+                speak_tts(data.reply, () => listenOnce());
+
+            } catch (err) {
+                console.error("Ошибка /chat:", err);
+                setStatus("Что-то пошло не так...");
+                speak_tts("Что-то пошло не так. Попробуй ещё раз.", () => listenOnce());
+            }
+        };
+
+        // долгое молчание → мягко завершаем
+        recognition.onspeechend = function() {
+            recognition.stop();
+        };
+
+        recognition.onerror = function(event) {
+            recognition = null;
+
+            if (event.error === "no-speech") {
+                // молчание — ждём ещё раз
+                setStatus("Не услышала... слушаю снова.");
+                setTimeout(() => listenOnce(), 1500);
+            } else if (event.error === "aborted") {
+                // намеренная остановка — ничего не делаем
+            } else {
+                setStatus("Ошибка микрофона: " + event.error);
+                stopDialog();
+            }
+        };
+    }
+
+    // ── Google TTS ────────────────────────────────────────────
+    async function speak_tts(text, onEnd) {
+        try {
+            console.log("TTS: запрос:", text);
+
+            const resp = await fetch("/tts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text })
+            });
+
+            if (!resp.ok) {
+                const err = await resp.json();
+                throw new Error("TTS ошибка: " + (err.error || resp.status));
+            }
+
+            const blob  = await resp.blob();
+            const url   = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+
+            audio.onended = () => {
+                URL.revokeObjectURL(url);
+                if (onEnd) onEnd();
+            };
+
+            audio.onerror = (e) => {
+                console.error("TTS: ошибка воспроизведения", e);
+                URL.revokeObjectURL(url);
+                if (onEnd) onEnd();
+            };
+
+            audio.play().catch(e => {
+                console.error("TTS: play() отклонён:", e);
+                URL.revokeObjectURL(url);
+                if (onEnd) onEnd();
+            });
+
+        } catch (e) {
+            console.error("TTS: общая ошибка:", e);
+            if (onEnd) onEnd();
+        }
+    }
+</script>
+
+</body>
+</html>
