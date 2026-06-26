@@ -167,6 +167,27 @@
         #reply-text.visible {
             display: block;
         }
+
+        #play-reply-btn {
+            display: none;
+            width: 100%;
+            margin-top: 14px;
+            font-size: 1.2rem;
+            padding: 16px 20px;
+            border-radius: 14px;
+            border: none;
+            background: #1976d2;
+            color: white;
+            cursor: pointer;
+        }
+
+        #play-reply-btn.visible {
+            display: block;
+        }
+
+        #play-reply-btn:active {
+            filter: brightness(0.95);
+        }
     </style>
 </head>
 <body>
@@ -216,6 +237,7 @@
     <button id="btn" type="button" disabled onclick="toggleDialog()">Поговори со мной</button>
     <p id="status"></p>
     <div id="reply-text" aria-live="polite"></div>
+    <button type="button" id="play-reply-btn">🔊 Прослушать ответ</button>
 </div>
 
 <script>
@@ -253,6 +275,8 @@
 
     let dialogActive = false;
     let recognition = null;
+    let lastReplyText = "";
+    let afterSpeakCallback = null;
 
     function loadAnketaFromStorage() {
         const raw = localStorage.getItem("metapelet_anketa");
@@ -351,13 +375,45 @@
 
     function showReply(text) {
         const el = document.getElementById("reply-text");
+        const playBtn = document.getElementById("play-reply-btn");
         if (!text) {
             el.textContent = "";
             el.classList.remove("visible");
+            playBtn.classList.remove("visible");
+            lastReplyText = "";
             return;
         }
+        lastReplyText = text;
         el.textContent = text;
         el.classList.add("visible");
+        playBtn.classList.add("visible");
+    }
+
+    function unlockAudioForMobile() {
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) {
+                if (!window.__mpAudioCtx) {
+                    window.__mpAudioCtx = new AC();
+                }
+                window.__mpAudioCtx.resume();
+            }
+        } catch (e) {
+            console.warn("AudioContext unlock:", e);
+        }
+    }
+
+    function playReplyManually() {
+        if (!lastReplyText) return;
+        unlockAudioForMobile();
+        setStatus("Говорю...");
+        speakBrowser(lastReplyText, function() {
+            if (dialogActive && afterSpeakCallback) {
+                afterSpeakCallback();
+            } else if (dialogActive) {
+                listenOnce();
+            }
+        });
     }
 
     function setBtn(active) {
@@ -391,6 +447,7 @@
         }
         dialogActive = true;
         setBtn(true);
+        unlockAudioForMobile();
         listenOnce();
     }
 
@@ -445,8 +502,11 @@
 
                 const data = await response.json();
                 showReply(data.reply);
-                setStatus("Говорю...");
-                speak_tts(data.reply, () => listenOnce());
+                afterSpeakCallback = listenOnce;
+                setStatus("Говорю... Если не слышите — нажмите «Прослушать ответ»");
+                speak_tts(data.reply, function() {
+                    if (dialogActive) listenOnce();
+                });
             } catch (err) {
                 console.error("Ошибка /chat:", err);
                 setStatus("Что-то пошло не так...");
@@ -479,23 +539,26 @@
 
     function speakBrowser(text, onEnd) {
         if (!window.speechSynthesis) {
-            setStatus("Слушаю...");
+            setStatus("Слушаю... (голос недоступен — читайте текст выше)");
             if (onEnd) onEnd();
             return;
         }
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = speechLangForAnketa();
-        utterance.rate = 0.92;
-        utterance.onend = function() {
+        utterance.rate = 0.9;
+        let finished = false;
+        function done() {
+            if (finished) return;
+            finished = true;
             setStatus("Слушаю...");
             if (onEnd) onEnd();
-        };
-        utterance.onerror = function() {
-            setStatus("Слушаю...");
-            if (onEnd) onEnd();
-        };
+        }
+        utterance.onend = done;
+        utterance.onerror = done;
         window.speechSynthesis.speak(utterance);
+        // iOS иногда не вызывает onend — подстраховка
+        setTimeout(done, Math.min(15000, text.length * 120 + 2000));
     }
 
     async function speak_tts(text, onEnd) {
@@ -534,12 +597,13 @@
             await audio.play();
         } catch (e) {
             console.warn("Server TTS unavailable, using browser voice:", e);
-            setStatus("Говорю...");
+            setStatus("Нажмите «Прослушать ответ» для голоса");
             speakBrowser(text, onEnd);
         }
     }
 
     document.getElementById("save-anketa-btn").addEventListener("click", saveAnketa);
+    document.getElementById("play-reply-btn").addEventListener("click", playReplyManually);
 
     loadAnketaFromStorage();
     applyPresetIfNeeded();
