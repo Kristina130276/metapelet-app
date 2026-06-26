@@ -2,62 +2,152 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MetaPelet</title>
     <style>
         body {
             background: #f5f7fa;
-            font-family: Arial;
+            font-family: Arial, sans-serif;
             text-align: center;
-            margin-top: 80px;
+            margin: 0;
+            padding: 24px 16px 48px;
+            color: #333;
         }
 
         h1 {
-            font-size: 32px;
-            color: #333;
-            margin-bottom: 30px;
+            font-size: clamp(1.6rem, 4vw, 2rem);
+            margin-bottom: 8px;
         }
 
-        .fields {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 14px;
-            margin-bottom: 30px;
+        .subtitle {
+            font-size: 1.05rem;
+            color: #666;
+            margin-bottom: 24px;
+            max-width: 520px;
+            margin-left: auto;
+            margin-right: auto;
         }
 
-        .fields input {
-            font-size: 20px;
-            padding: 10px 20px;
-            border: 2px solid #ddd;
-            border-radius: 14px;
-            outline: none;
+        .card {
+            max-width: 520px;
+            margin: 0 auto 24px;
+            background: white;
+            border-radius: 16px;
+            padding: 24px 20px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+            text-align: left;
+        }
+
+        .card h2 {
+            margin: 0 0 16px;
+            font-size: 1.25rem;
             text-align: center;
-            width: 260px;
+        }
+
+        .field {
+            margin-bottom: 16px;
+        }
+
+        .field label {
+            display: block;
+            font-size: 1rem;
+            margin-bottom: 6px;
+            color: #444;
+        }
+
+        .field input,
+        .field select,
+        .field textarea {
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 18px;
+            padding: 12px 14px;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            outline: none;
+            font-family: inherit;
             color: #333;
             background: white;
         }
 
-        .fields input:focus { border-color: #4CAF50; }
+        .field textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .field input:focus,
+        .field select:focus,
+        .field textarea:focus {
+            border-color: #4CAF50;
+        }
+
+        .hint {
+            font-size: 0.95rem;
+            color: #777;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        #save-anketa-btn {
+            width: 100%;
+            font-size: 1.15rem;
+            padding: 14px 20px;
+            border-radius: 14px;
+            border: none;
+            background: #1976d2;
+            color: white;
+            cursor: pointer;
+        }
+
+        #save-anketa-btn:hover {
+            filter: brightness(1.05);
+        }
+
+        #anketa-status {
+            margin-top: 12px;
+            text-align: center;
+            font-size: 1rem;
+            min-height: 1.4em;
+        }
+
+        #talk-section {
+            max-width: 520px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        #talk-section.locked {
+            opacity: 0.45;
+            pointer-events: none;
+        }
 
         #btn {
-            font-size: 24px;
-            padding: 20px 40px;
+            font-size: 1.35rem;
+            padding: 20px 36px;
             border-radius: 20px;
             border: none;
             background: #4CAF50;
             color: white;
             cursor: pointer;
-            display: block;
-            margin: 0 auto;
             transition: background 0.2s;
         }
 
-        #btn.active { background: #e53935; }   /* красный — диалог идёт */
-        #btn:hover  { filter: brightness(1.08); }
+        #btn:disabled {
+            background: #aaa;
+            cursor: not-allowed;
+        }
+
+        #btn.active {
+            background: #e53935;
+        }
+
+        #btn:hover:not(:disabled) {
+            filter: brightness(1.08);
+        }
 
         #status {
-            margin-top: 24px;
-            font-size: 20px;
+            margin-top: 20px;
+            font-size: 1.1rem;
             color: #555;
             min-height: 30px;
         }
@@ -65,31 +155,65 @@
 </head>
 <body>
 
-<h1 id="greeting">Привет 💛</h1>
+<h1 id="greeting">MetaPelet 💛</h1>
+<p class="subtitle">Сначала заполните анкету — потом можно начать разговор</p>
 
-<div class="fields">
-    <input
-        id="name-input"
-        type="text"
-        placeholder="Как вас зовут?"
-        oninput="onNameInput()"
-    />
-    <input
-        id="age-input"
-        type="number"
-        min="1"
-        max="120"
-        placeholder="Сколько вам лет?"
-        oninput="onAgeInput()"
-    />
+<div class="card" id="anketa-section">
+    <h2>Анкета</h2>
+    <p class="hint">Все поля нужны, чтобы MetaPelet говорила с вами по-дружески и бережно</p>
+
+    <div class="field">
+        <label for="name-input">Имя</label>
+        <input id="name-input" type="text" placeholder="Как вас зовут?" autocomplete="name">
+    </div>
+
+    <div class="field">
+        <label for="age-input">Возраст</label>
+        <input id="age-input" type="number" min="1" max="120" placeholder="Сколько вам лет?">
+    </div>
+
+    <div class="field">
+        <label for="language-input">Язык общения</label>
+        <select id="language-input">
+            <option value="ru-RU">Русский</option>
+            <option value="he-IL">Иврит</option>
+            <option value="en-US">English</option>
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="interests-input">Интересы — что вам нравится</label>
+        <textarea id="interests-input" placeholder="Например: песни, воспоминания, разговоры о семье"></textarea>
+    </div>
+
+    <div class="field">
+        <label for="avoid-input">Чего лучше избегать в разговоре</label>
+        <textarea id="avoid-input" placeholder="Например: медицина, советы, спорные темы"></textarea>
+    </div>
+
+    <button type="button" id="save-anketa-btn">Сохранить анкету</button>
+    <p id="anketa-status"></p>
 </div>
 
-<button id="btn" onclick="toggleDialog()">Поговори со мной</button>
-
-<p id="status"></p>
+<div class="card locked" id="talk-section">
+    <p class="hint" id="talk-hint">Сохраните анкету, чтобы открыть разговор</p>
+    <button id="btn" type="button" disabled onclick="toggleDialog()">Поговори со мной</button>
+    <p id="status"></p>
+</div>
 
 <script>
-    // ── user_id ──────────────────────────────────────────────
+    const URL_PROFILE_ID = new URLSearchParams(window.location.search).get("profile") || "";
+
+    const PRESETS = {
+        sonya: {
+            name: "Соня",
+            age: "86",
+            language: "ru-RU",
+            interests: "добрые истории, прошлое и детство, русские народные песни (Катюша, Подмосковные вечера, Калинка, частушки)",
+            avoid_topics: "болезни, медицина, лечение, советы, «надо», «нужно», споры, резкий тон"
+        }
+    };
+
     function getUserId() {
         let id = localStorage.getItem("metapelet_user_id");
         if (!id) {
@@ -100,28 +224,109 @@
     }
     const USER_ID = getUserId();
 
-    // ── имя и возраст ─────────────────────────────────────────
-    let userName = localStorage.getItem("metapelet_user_name") || "";
-    let userAge  = localStorage.getItem("metapelet_user_age")  || "";
+    let anketa = {
+        name: "",
+        age: "",
+        language: "ru-RU",
+        interests: "",
+        avoid_topics: "",
+        profile_id: URL_PROFILE_ID,
+        complete: false
+    };
 
-    document.getElementById("name-input").value = userName;
-    document.getElementById("age-input").value  = userAge;
+    let dialogActive = false;
+    let recognition = null;
 
-    function onNameInput() {
-        userName = document.getElementById("name-input").value.trim();
-        localStorage.setItem("metapelet_user_name", userName);
+    function loadAnketaFromStorage() {
+        const raw = localStorage.getItem("metapelet_anketa");
+        if (raw) {
+            try {
+                anketa = { ...anketa, ...JSON.parse(raw) };
+            } catch (e) {
+                console.warn("Не удалось прочитать анкету", e);
+            }
+        }
+    }
+
+    function fillFormFromAnketa() {
+        document.getElementById("name-input").value = anketa.name || "";
+        document.getElementById("age-input").value = anketa.age || "";
+        document.getElementById("language-input").value = anketa.language || "ru-RU";
+        document.getElementById("interests-input").value = anketa.interests || "";
+        document.getElementById("avoid-input").value = anketa.avoid_topics || "";
+        updateGreeting();
+    }
+
+    function applyPresetIfNeeded() {
+        const key = URL_PROFILE_ID.trim().toLowerCase();
+        if (!key || !PRESETS[key]) return;
+        if (localStorage.getItem("metapelet_anketa")) return;
+        anketa = { ...anketa, ...PRESETS[key], profile_id: key, complete: false };
+        fillFormFromAnketa();
+    }
+
+    function readFormIntoAnketa() {
+        anketa.name = document.getElementById("name-input").value.trim();
+        anketa.age = document.getElementById("age-input").value.trim();
+        anketa.language = document.getElementById("language-input").value;
+        anketa.interests = document.getElementById("interests-input").value.trim();
+        anketa.avoid_topics = document.getElementById("avoid-input").value.trim();
+        if (URL_PROFILE_ID) {
+            anketa.profile_id = URL_PROFILE_ID.trim().toLowerCase();
+        }
+    }
+
+    function isAnketaValid() {
+        return (
+            anketa.name &&
+            anketa.age &&
+            anketa.language &&
+            anketa.interests &&
+            anketa.avoid_topics
+        );
+    }
+
+    function updateGreeting() {
         document.getElementById("greeting").textContent =
-            userName ? `Привет, ${userName} 💛` : "Привет 💛";
+            anketa.name ? `Привет, ${anketa.name} 💛` : "MetaPelet 💛";
     }
 
-    function onAgeInput() {
-        userAge = document.getElementById("age-input").value.trim();
-        localStorage.setItem("metapelet_user_age", userAge);
+    function setTalkEnabled(enabled) {
+        const section = document.getElementById("talk-section");
+        const btn = document.getElementById("btn");
+        const hint = document.getElementById("talk-hint");
+        btn.disabled = !enabled;
+        section.classList.toggle("locked", !enabled);
+        hint.textContent = enabled
+            ? "Анкета сохранена. Можно начать разговор."
+            : "Сохраните анкету, чтобы открыть разговор";
     }
 
-    // ── состояние диалога ─────────────────────────────────────
-    let dialogActive  = false;
-    let recognition   = null;
+    function saveAnketa() {
+        readFormIntoAnketa();
+        if (!isAnketaValid()) {
+            document.getElementById("anketa-status").textContent =
+                "Пожалуйста, заполните все поля анкеты.";
+            setTalkEnabled(false);
+            anketa.complete = false;
+            return;
+        }
+        anketa.complete = true;
+        localStorage.setItem("metapelet_anketa", JSON.stringify(anketa));
+        document.getElementById("anketa-status").textContent =
+            "Анкета сохранена ✓";
+        updateGreeting();
+        setTalkEnabled(true);
+    }
+
+    function speechLangForAnketa() {
+        const map = {
+            "ru-RU": "ru-RU",
+            "he-IL": "he-IL",
+            "en-US": "en-US"
+        };
+        return map[anketa.language] || "ru-RU";
+    }
 
     function setStatus(text) {
         document.getElementById("status").textContent = text;
@@ -138,8 +343,11 @@
         }
     }
 
-    // ── запуск / остановка ────────────────────────────────────
     function toggleDialog() {
+        if (!anketa.complete) {
+            setStatus("Сначала сохраните анкету.");
+            return;
+        }
         if (dialogActive) {
             stopDialog();
         } else {
@@ -153,62 +361,63 @@
             alert("Микрофон не поддерживается. Откройте в Chrome.");
             return;
         }
-
         dialogActive = true;
         setBtn(true);
-        listenOnce();  // запускаем первый цикл
+        listenOnce();
     }
 
     function stopDialog() {
         dialogActive = false;
         setBtn(false);
         setStatus("Диалог завершён");
-
         if (recognition) {
             recognition.abort();
             recognition = null;
         }
     }
 
-    // ── один цикл: слушаем → думаем → говорим → повтор ───────
     function listenOnce() {
         if (!dialogActive) return;
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
-        recognition.lang = "ru-RU";
+        recognition.lang = speechLangForAnketa();
         recognition.interimResults = false;
         recognition.maxAlternatives = 1;
 
         setStatus("Слушаю...");
         recognition.start();
 
-        // пользователь сказал что-то
         recognition.onresult = async function(event) {
             const userMessage = event.results[0][0].transcript;
             recognition = null;
             setStatus("Думаю...");
 
+            const payload = {
+                message: userMessage,
+                user_id: USER_ID,
+                name: anketa.name,
+                age: anketa.age,
+                language: anketa.language,
+                interests: anketa.interests,
+                avoid_topics: anketa.avoid_topics
+            };
+            if (anketa.profile_id) {
+                payload.profile_id = anketa.profile_id;
+            }
+
             try {
                 const response = await fetch("/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        message: userMessage,
-                        user_id: USER_ID,
-                        name:    userName,
-                        age:     userAge
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 if (!response.ok) throw new Error("Сервер не ответил");
 
                 const data = await response.json();
                 setStatus("Говорю...");
-
-                // После окончания речи — снова слушаем
                 speak_tts(data.reply, () => listenOnce());
-
             } catch (err) {
                 console.error("Ошибка /chat:", err);
                 setStatus("Что-то пошло не так...");
@@ -216,20 +425,17 @@
             }
         };
 
-        // долгое молчание → мягко завершаем
         recognition.onspeechend = function() {
             recognition.stop();
         };
 
         recognition.onerror = function(event) {
             recognition = null;
-
             if (event.error === "no-speech") {
-                // молчание — ждём ещё раз
                 setStatus("Не услышала... слушаю снова.");
                 setTimeout(() => listenOnce(), 1500);
             } else if (event.error === "aborted") {
-                // намеренная остановка — ничего не делаем
+                // stop
             } else {
                 setStatus("Ошибка микрофона: " + event.error);
                 stopDialog();
@@ -237,11 +443,8 @@
         };
     }
 
-    // ── Google TTS ────────────────────────────────────────────
     async function speak_tts(text, onEnd) {
         try {
-            console.log("TTS: запрос:", text);
-
             const resp = await fetch("/tts", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -253,8 +456,8 @@
                 throw new Error("TTS ошибка: " + (err.error || resp.status));
             }
 
-            const blob  = await resp.blob();
-            const url   = URL.createObjectURL(blob);
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
             const audio = new Audio(url);
 
             audio.onended = () => {
@@ -262,22 +465,29 @@
                 if (onEnd) onEnd();
             };
 
-            audio.onerror = (e) => {
-                console.error("TTS: ошибка воспроизведения", e);
+            audio.onerror = () => {
                 URL.revokeObjectURL(url);
                 if (onEnd) onEnd();
             };
 
-            audio.play().catch(e => {
-                console.error("TTS: play() отклонён:", e);
+            audio.play().catch(() => {
                 URL.revokeObjectURL(url);
                 if (onEnd) onEnd();
             });
-
         } catch (e) {
-            console.error("TTS: общая ошибка:", e);
+            console.error("TTS:", e);
             if (onEnd) onEnd();
         }
+    }
+
+    document.getElementById("save-anketa-btn").addEventListener("click", saveAnketa);
+
+    loadAnketaFromStorage();
+    applyPresetIfNeeded();
+    fillFormFromAnketa();
+    setTalkEnabled(anketa.complete && isAnketaValid());
+    if (anketa.complete) {
+        document.getElementById("anketa-status").textContent = "Анкета сохранена ✓";
     }
 </script>
 
