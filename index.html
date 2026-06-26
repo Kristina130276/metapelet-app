@@ -151,6 +151,22 @@
             color: #555;
             min-height: 30px;
         }
+
+        #reply-text {
+            margin-top: 16px;
+            padding: 14px 16px;
+            background: #f0f7f0;
+            border-radius: 12px;
+            font-size: 1.05rem;
+            line-height: 1.45;
+            color: #333;
+            text-align: left;
+            display: none;
+        }
+
+        #reply-text.visible {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -199,6 +215,7 @@
     <p class="hint" id="talk-hint">Сохраните анкету, чтобы открыть разговор</p>
     <button id="btn" type="button" disabled onclick="toggleDialog()">Поговори со мной</button>
     <p id="status"></p>
+    <div id="reply-text" aria-live="polite"></div>
 </div>
 
 <script>
@@ -332,6 +349,17 @@
         document.getElementById("status").textContent = text;
     }
 
+    function showReply(text) {
+        const el = document.getElementById("reply-text");
+        if (!text) {
+            el.textContent = "";
+            el.classList.remove("visible");
+            return;
+        }
+        el.textContent = text;
+        el.classList.add("visible");
+    }
+
     function setBtn(active) {
         const btn = document.getElementById("btn");
         if (active) {
@@ -416,6 +444,7 @@
                 if (!response.ok) throw new Error("Сервер не ответил");
 
                 const data = await response.json();
+                showReply(data.reply);
                 setStatus("Говорю...");
                 speak_tts(data.reply, () => listenOnce());
             } catch (err) {
@@ -448,6 +477,27 @@
         };
     }
 
+    function speakBrowser(text, onEnd) {
+        if (!window.speechSynthesis) {
+            setStatus("Слушаю...");
+            if (onEnd) onEnd();
+            return;
+        }
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = speechLangForAnketa();
+        utterance.rate = 0.92;
+        utterance.onend = function() {
+            setStatus("Слушаю...");
+            if (onEnd) onEnd();
+        };
+        utterance.onerror = function() {
+            setStatus("Слушаю...");
+            if (onEnd) onEnd();
+        };
+        window.speechSynthesis.speak(utterance);
+    }
+
     async function speak_tts(text, onEnd) {
         try {
             const resp = await fetch("/tts", {
@@ -457,31 +507,35 @@
             });
 
             if (!resp.ok) {
-                const err = await resp.json();
-                throw new Error("TTS ошибка: " + (err.error || resp.status));
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || ("HTTP " + resp.status));
+            }
+
+            const contentType = resp.headers.get("content-type") || "";
+            if (!contentType.includes("audio")) {
+                throw new Error("Не аудио");
             }
 
             const blob = await resp.blob();
             const url = URL.createObjectURL(blob);
             const audio = new Audio(url);
 
-            audio.onended = () => {
+            audio.onended = function() {
                 URL.revokeObjectURL(url);
+                setStatus("Слушаю...");
                 if (onEnd) onEnd();
             };
 
-            audio.onerror = () => {
+            audio.onerror = function() {
                 URL.revokeObjectURL(url);
-                if (onEnd) onEnd();
+                speakBrowser(text, onEnd);
             };
 
-            audio.play().catch(() => {
-                URL.revokeObjectURL(url);
-                if (onEnd) onEnd();
-            });
+            await audio.play();
         } catch (e) {
-            console.error("TTS:", e);
-            if (onEnd) onEnd();
+            console.warn("Server TTS unavailable, using browser voice:", e);
+            setStatus("Говорю...");
+            speakBrowser(text, onEnd);
         }
     }
 
