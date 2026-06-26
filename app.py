@@ -133,7 +133,7 @@ def chat():
 
     try:
         response = client.messages.create(
-            model="claude-3-haiku-20240307",
+            model="claude-haiku-4-5-20251001",
             max_tokens=200,
             system=system_prompt,
             messages=history

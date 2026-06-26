@@ -366,10 +366,10 @@
         listenOnce();
     }
 
-    function stopDialog() {
+    function stopDialog(statusText) {
         dialogActive = false;
         setBtn(false);
-        setStatus("Диалог завершён");
+        setStatus(statusText || "Диалог завершён");
         if (recognition) {
             recognition.abort();
             recognition = null;
@@ -430,15 +430,20 @@
         };
 
         recognition.onerror = function(event) {
+            console.error("SpeechRecognition error:", event.error);
             recognition = null;
             if (event.error === "no-speech") {
                 setStatus("Не услышала... слушаю снова.");
                 setTimeout(() => listenOnce(), 1500);
+            } else if (event.error === "network") {
+                setStatus("Нет связи для распознавания речи. Пробую снова...");
+                setTimeout(() => listenOnce(), 2000);
             } else if (event.error === "aborted") {
-                // stop
+                // stopDialog() или повторный start()
+            } else if (event.error === "not-allowed") {
+                stopDialog("Разрешите доступ к микрофону в настройках браузера.");
             } else {
-                setStatus("Ошибка микрофона: " + event.error);
-                stopDialog();
+                stopDialog("Ошибка микрофона: " + event.error);
             }
         };
     }
