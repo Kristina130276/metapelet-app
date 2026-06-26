@@ -1,0 +1,22 @@
+# MetaPelet Flask app — app.metapelet.org
+# Deploy: Render Dashboard → New Blueprint → connect Kristina130276/metapelet-app
+# Or sync an existing Python Web Service with this repo + branch main.
+
+services:
+  - type: web
+    name: metapelet-app
+    runtime: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /
+    domains:
+      - app.metapelet.org
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.5"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
