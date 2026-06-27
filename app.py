@@ -146,14 +146,25 @@ def _language_label(language: str) -> str:
     return labels.get(language, language)
 
 
-def _build_anketa_block(language: str, interests: str, avoid_topics: str) -> str:
+def _language_instruction(language: str) -> str:
+    label = _language_label(language)
+    return (
+        f"ЯЗЫК ОБЩЕНИЯ (единственный): {label}.\n"
+        f"Пиши, думай и отвечай ТОЛЬКО на {label} языке. "
+        f"Язык интерфейса, предыдущих сообщений и системных настроек игнорируется. "
+        f"Не переключай язык самостоятельно и не переводи речь пользователя, "
+        f"если он прямо не попросил. Озвучивай на том же языке, на котором ведёшь диалог."
+    )
+
+
+def _build_anketa_block(interests: str, avoid_topics: str) -> str:
     """Профиль из анкеты на сайте (без БД). Память между сессиями — позже."""
-    parts = [f"Язык общения: {_language_label(language)}."]
+    parts = []
     if interests.strip():
         parts.append(f"Интересы и что нравится:\n{interests.strip()}")
     if avoid_topics.strip():
         parts.append(f"Избегать тем:\n{avoid_topics.strip()}")
-    if len(parts) <= 1 and not interests.strip() and not avoid_topics.strip():
+    if not parts:
         return ""
     return "[Профиль из анкеты пользователя]\n" + "\n".join(parts)
 
@@ -173,6 +184,7 @@ def build_system_prompt(
     prompt = _read_prompt("base_metapelet.txt").format(
         user_name=user_name,
         age_line=age_line,
+        language_line=_language_instruction(language or "ru-RU"),
     )
 
     profile_key = str(profile_id).strip().lower() if profile_id else ""
@@ -181,12 +193,9 @@ def build_system_prompt(
     if profile_file:
         prompt = prompt + "\n\n" + _read_prompt(profile_file)
     else:
-        anketa_block = _build_anketa_block(language, interests, avoid_topics)
+        anketa_block = _build_anketa_block(interests, avoid_topics)
         if anketa_block:
             prompt = prompt + "\n\n" + anketa_block
-
-    if language and language != "ru-RU":
-        prompt = prompt + f"\n\nОтвечай на языке: {_language_label(language)}."
 
     return prompt
 
@@ -228,10 +237,13 @@ def chat():
 
     is_greeting = user_message == GREETING_TRIGGER
     if is_greeting:
+        lang_label = _language_label(language)
         user_message = (
             f"Пользователь {user_name} только что начал разговор. "
-            "Поприветствуй тепло по имени, одним-двумя короткими предложениями, "
-            "и задай один простой добрый вопрос. Без эмодзи."
+            f"Язык из анкеты: {lang_label}. "
+            "Сформируй первое сообщение: тёплое приветствие по имени и один простой "
+            "вопрос о самочувствии или настроении. Одно-два коротких предложения. "
+            f"Только на {lang_label} языке. Без эмодзи."
         )
 
     print(
