@@ -172,11 +172,11 @@
             display: none;
             width: 100%;
             margin-top: 14px;
-            font-size: 1.2rem;
-            padding: 16px 20px;
+            font-size: 1.05rem;
+            padding: 14px 20px;
             border-radius: 14px;
             border: none;
-            background: #1976d2;
+            background: #888;
             color: white;
             cursor: pointer;
         }
@@ -185,15 +185,61 @@
             display: block;
         }
 
+        .text-test summary {
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: #888;
+            text-align: center;
+            list-style: none;
+        }
+
         #play-reply-btn:active {
             filter: brightness(0.95);
+        }
+
+        .text-test {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            text-align: left;
+        }
+
+        .text-test label {
+            display: block;
+            font-size: 0.95rem;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        #text-input {
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 18px;
+            padding: 12px 14px;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            min-height: 56px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        #text-send-btn {
+            width: 100%;
+            margin-top: 10px;
+            font-size: 1.1rem;
+            padding: 14px 20px;
+            border-radius: 14px;
+            border: none;
+            background: #1976d2;
+            color: white;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
 
-<h1 id="greeting">MetaPelet 💛</h1>
-<p class="subtitle">Сначала заполните анкету — потом можно начать разговор</p>
+<h1 id="greeting">MetaPelet</h1>
+<p class="subtitle">Заполните анкету один раз — разговор начнётся сам</p>
 
 <div class="card" id="anketa-section">
     <h2>Анкета</h2>
@@ -234,14 +280,21 @@
 
 <div class="card locked" id="talk-section">
     <p class="hint" id="talk-hint">Сохраните анкету, чтобы открыть разговор</p>
-    <button id="btn" type="button" disabled onclick="toggleDialog()">Поговори со мной</button>
+    <button id="btn" type="button" disabled onclick="toggleDialog()">Завершить разговор</button>
     <p id="status"></p>
     <div id="reply-text" aria-live="polite"></div>
-    <button type="button" id="play-reply-btn">🔊 Прослушать ответ</button>
+    <button type="button" id="play-reply-btn">Не слышно? Нажмите, чтобы повторить</button>
+    <details class="text-test">
+        <summary>Написать вместо голоса (для теста)</summary>
+        <label for="text-input">Сообщение</label>
+        <textarea id="text-input" rows="2" placeholder="Например: Привет, как дела?"></textarea>
+        <button type="button" id="text-send-btn">Отправить</button>
+    </details>
 </div>
 
 <script>
     const URL_PROFILE_ID = new URLSearchParams(window.location.search).get("profile") || "";
+    const GREETING_TRIGGER = "__greeting__";
 
     const PRESETS = {
         sonya: {
@@ -277,6 +330,53 @@
     let recognition = null;
     let lastReplyText = "";
     let afterSpeakCallback = null;
+    let cachedVoices = [];
+
+    function loadVoices() {
+        if (!window.speechSynthesis) return;
+        cachedVoices = speechSynthesis.getVoices() || [];
+    }
+    if (window.speechSynthesis) {
+        loadVoices();
+        speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    function stripEmojis(text) {
+        return (text || "")
+            .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\uFE0F]/gu, "")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+    }
+
+    function textForSpeech(text) {
+        return stripEmojis(text);
+    }
+
+    function pickVoice(lang) {
+        const prefix = (lang || "ru-RU").split("-")[0];
+        const voices = cachedVoices.length ? cachedVoices : (speechSynthesis.getVoices() || []);
+        const local = voices.filter(v => v.lang && v.lang.startsWith(prefix));
+        const ranked = local.sort((a, b) => {
+            const score = v => {
+                let s = 0;
+                if (/google/i.test(v.name)) s += 4;
+                if (/milena|katya|irina|anna|svetlana|helena|yandex/i.test(v.name)) s += 3;
+                if (/natural|neural|premium|wavenet/i.test(v.name)) s += 2;
+                if (/female|woman|жен/i.test(v.name + v.voiceURI)) s += 1;
+                return s;
+            };
+            return score(b) - score(a);
+        });
+        return ranked[0] || voices.find(v => v.lang && v.lang.startsWith(prefix)) || null;
+    }
+
+    function hideReplayButton() {
+        document.getElementById("play-reply-btn").classList.remove("visible");
+    }
+
+    function showReplayButton() {
+        document.getElementById("play-reply-btn").classList.add("visible");
+    }
 
     function loadAnketaFromStorage() {
         const raw = localStorage.getItem("metapelet_anketa");
@@ -329,7 +429,7 @@
 
     function updateGreeting() {
         document.getElementById("greeting").textContent =
-            anketa.name ? `Привет, ${anketa.name} 💛` : "MetaPelet 💛";
+            anketa.name ? `Привет, ${anketa.name}` : "MetaPelet";
     }
 
     function setTalkEnabled(enabled) {
@@ -339,8 +439,8 @@
         btn.disabled = !enabled;
         section.classList.toggle("locked", !enabled);
         hint.textContent = enabled
-            ? "Анкета сохранена. Можно начать разговор."
-            : "Сохраните анкету, чтобы открыть разговор";
+            ? "MetaPelet сама поздоровается и будет слушать вас."
+            : "Сохраните анкету, чтобы начать разговор";
     }
 
     function saveAnketa() {
@@ -358,6 +458,10 @@
             "Анкета сохранена ✓";
         updateGreeting();
         setTalkEnabled(true);
+        unlockAudioForMobile();
+        setTimeout(function() {
+            if (!dialogActive) startDialog(true);
+        }, 500);
     }
 
     function speechLangForAnketa() {
@@ -375,18 +479,17 @@
 
     function showReply(text) {
         const el = document.getElementById("reply-text");
-        const playBtn = document.getElementById("play-reply-btn");
         if (!text) {
             el.textContent = "";
             el.classList.remove("visible");
-            playBtn.classList.remove("visible");
+            hideReplayButton();
             lastReplyText = "";
             return;
         }
         lastReplyText = text;
-        el.textContent = text;
+        el.textContent = stripEmojis(text) || text;
         el.classList.add("visible");
-        playBtn.classList.add("visible");
+        hideReplayButton();
     }
 
     function unlockAudioForMobile() {
@@ -406,8 +509,9 @@
     function playReplyManually() {
         if (!lastReplyText) return;
         unlockAudioForMobile();
+        hideReplayButton();
         setStatus("Говорю...");
-        speakBrowser(lastReplyText, function() {
+        speakReply(lastReplyText, function() {
             if (dialogActive && afterSpeakCallback) {
                 afterSpeakCallback();
             } else if (dialogActive) {
@@ -418,11 +522,12 @@
 
     function setBtn(active) {
         const btn = document.getElementById("btn");
+        btn.style.display = active ? "inline-block" : "none";
         if (active) {
             btn.textContent = "Завершить разговор";
             btn.classList.add("active");
         } else {
-            btn.textContent = "Поговори со мной";
+            btn.textContent = "Завершить разговор";
             btn.classList.remove("active");
         }
     }
@@ -435,20 +540,24 @@
         if (dialogActive) {
             stopDialog();
         } else {
-            startDialog();
+            startDialog(true);
         }
     }
 
-    function startDialog() {
+    function startDialog(withGreeting) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
+        if (!SpeechRecognition && !withGreeting) {
             alert("Микрофон не поддерживается. Откройте в Chrome.");
             return;
         }
         dialogActive = true;
         setBtn(true);
         unlockAudioForMobile();
-        listenOnce();
+        if (withGreeting) {
+            sendUserMessage(GREETING_TRIGGER, true);
+        } else {
+            listenOnce();
+        }
     }
 
     function stopDialog(statusText) {
@@ -476,42 +585,7 @@
         recognition.onresult = async function(event) {
             const userMessage = event.results[0][0].transcript;
             recognition = null;
-            setStatus("Думаю...");
-
-            const payload = {
-                message: userMessage,
-                user_id: USER_ID,
-                name: anketa.name,
-                age: anketa.age,
-                language: anketa.language,
-                interests: anketa.interests,
-                avoid_topics: anketa.avoid_topics
-            };
-            if (anketa.profile_id) {
-                payload.profile_id = anketa.profile_id;
-            }
-
-            try {
-                const response = await fetch("/chat", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-
-                if (!response.ok) throw new Error("Сервер не ответил");
-
-                const data = await response.json();
-                showReply(data.reply);
-                afterSpeakCallback = listenOnce;
-                setStatus("Говорю... Если не слышите — нажмите «Прослушать ответ»");
-                speak_tts(data.reply, function() {
-                    if (dialogActive) listenOnce();
-                });
-            } catch (err) {
-                console.error("Ошибка /chat:", err);
-                setStatus("Что-то пошло не так...");
-                speak_tts("Что-то пошло не так. Попробуй ещё раз.", () => listenOnce());
-            }
+            await sendUserMessage(userMessage);
         };
 
         recognition.onspeechend = function() {
@@ -525,8 +599,8 @@
                 setStatus("Не услышала... слушаю снова.");
                 setTimeout(() => listenOnce(), 1500);
             } else if (event.error === "network") {
-                setStatus("Нет связи для распознавания речи. Пробую снова...");
-                setTimeout(() => listenOnce(), 2000);
+                setStatus("Микрофон недоступен (нет связи). Напишите сообщение ниже.");
+                stopDialog();
             } else if (event.error === "aborted") {
                 // stopDialog() или повторный start()
             } else if (event.error === "not-allowed") {
@@ -537,16 +611,89 @@
         };
     }
 
+    async function sendUserMessage(userMessage, isGreeting) {
+        const text = (userMessage || "").trim();
+        if (!text) return;
+        if (text === GREETING_TRIGGER) isGreeting = true;
+
+        if (!dialogActive) {
+            dialogActive = true;
+            setBtn(true);
+            unlockAudioForMobile();
+        }
+
+        setStatus(isGreeting ? "Здороваюсь..." : "Думаю...");
+        hideReplayButton();
+
+        const payload = {
+            message: text,
+            user_id: USER_ID,
+            name: anketa.name,
+            age: anketa.age,
+            language: anketa.language,
+            interests: anketa.interests,
+            avoid_topics: anketa.avoid_topics
+        };
+        if (anketa.profile_id) {
+            payload.profile_id = anketa.profile_id;
+        }
+
+        try {
+            const response = await fetch("/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error("Сервер не ответил");
+
+            const data = await response.json();
+            showReply(data.reply);
+            afterSpeakCallback = dialogActive ? listenOnce : null;
+            setStatus("Говорю...");
+            speakReply(data.reply, function() {
+                if (dialogActive) listenOnce();
+            });
+        } catch (err) {
+            console.error("Ошибка /chat:", err);
+            setStatus("Что-то пошло не так...");
+            speakReply("Что-то пошло не так. Попробуй ещё раз.", function() {
+                if (dialogActive) listenOnce();
+            });
+        }
+    }
+
+    function sendTextMessage() {
+        if (!anketa.complete) {
+            setStatus("Сначала сохраните анкету.");
+            return;
+        }
+        const input = document.getElementById("text-input");
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = "";
+        sendUserMessage(text);
+    }
+
     function speakBrowser(text, onEnd) {
+        const spoken = textForSpeech(text);
+        if (!spoken) {
+            if (onEnd) onEnd();
+            return;
+        }
         if (!window.speechSynthesis) {
-            setStatus("Слушаю... (голос недоступен — читайте текст выше)");
+            setStatus("Готово — читайте текст ответа выше");
+            showReplayButton();
             if (onEnd) onEnd();
             return;
         }
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
+        const utterance = new SpeechSynthesisUtterance(spoken);
         utterance.lang = speechLangForAnketa();
-        utterance.rate = 0.9;
+        const voice = pickVoice(speechLangForAnketa());
+        if (voice) utterance.voice = voice;
+        utterance.rate = 0.86;
+        utterance.pitch = 1.05;
         let finished = false;
         function done() {
             if (finished) return;
@@ -555,55 +702,72 @@
             if (onEnd) onEnd();
         }
         utterance.onend = done;
-        utterance.onerror = done;
+        utterance.onerror = function() {
+            showReplayButton();
+            done();
+        };
         window.speechSynthesis.speak(utterance);
-        // iOS иногда не вызывает onend — подстраховка
-        setTimeout(done, Math.min(15000, text.length * 120 + 2000));
+        setTimeout(done, Math.min(20000, spoken.length * 130 + 2500));
     }
 
-    async function speak_tts(text, onEnd) {
+    async function speakReply(text, onEnd) {
+        const spoken = textForSpeech(text);
+        if (!spoken) {
+            if (onEnd) onEnd();
+            return;
+        }
+        unlockAudioForMobile();
+        let audioUrl = null;
         try {
             const resp = await fetch("/tts", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text })
+                body: JSON.stringify({ text: spoken, language: anketa.language })
             });
 
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                throw new Error(err.error || ("HTTP " + resp.status));
-            }
+            if (!resp.ok) throw new Error("TTS unavailable");
 
             const contentType = resp.headers.get("content-type") || "";
-            if (!contentType.includes("audio")) {
-                throw new Error("Не аудио");
-            }
+            if (!contentType.includes("audio")) throw new Error("Not audio");
 
             const blob = await resp.blob();
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
+            audioUrl = URL.createObjectURL(blob);
+            const audio = new Audio(audioUrl);
 
             audio.onended = function() {
-                URL.revokeObjectURL(url);
+                URL.revokeObjectURL(audioUrl);
                 setStatus("Слушаю...");
                 if (onEnd) onEnd();
             };
 
             audio.onerror = function() {
-                URL.revokeObjectURL(url);
-                speakBrowser(text, onEnd);
+                URL.revokeObjectURL(audioUrl);
+                speakBrowser(spoken, onEnd);
             };
 
-            await audio.play();
+            try {
+                await audio.play();
+            } catch (playErr) {
+                URL.revokeObjectURL(audioUrl);
+                showReplayButton();
+                speakBrowser(spoken, onEnd);
+            }
         } catch (e) {
+            if (audioUrl) URL.revokeObjectURL(audioUrl);
             console.warn("Server TTS unavailable, using browser voice:", e);
-            setStatus("Нажмите «Прослушать ответ» для голоса");
-            speakBrowser(text, onEnd);
+            speakBrowser(spoken, onEnd);
         }
     }
 
     document.getElementById("save-anketa-btn").addEventListener("click", saveAnketa);
     document.getElementById("play-reply-btn").addEventListener("click", playReplyManually);
+    document.getElementById("text-send-btn").addEventListener("click", sendTextMessage);
+    document.getElementById("text-input").addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendTextMessage();
+        }
+    });
 
     loadAnketaFromStorage();
     applyPresetIfNeeded();
@@ -611,6 +775,10 @@
     setTalkEnabled(anketa.complete && isAnketaValid());
     if (anketa.complete) {
         document.getElementById("anketa-status").textContent = "Анкета сохранена ✓";
+        unlockAudioForMobile();
+        setTimeout(function() {
+            if (!dialogActive && isAnketaValid()) startDialog(true);
+        }, 1000);
     }
 </script>
 

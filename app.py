@@ -4,6 +4,7 @@ from anthropic import Anthropic
 from dotenv import load_dotenv
 import os
 import base64
+import re
 import requests as http_requests
 from pathlib import Path
 
@@ -22,6 +23,54 @@ PROFILE_FILES = {
 # Словарь: user_id → история сообщений
 conversations = {}
 MAX_MESSAGES = 10
+GREETING_TRIGGER = "__greeting__"
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F600-\U0001F64F"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FAFF"
+    "\U00002702-\U000027B0"
+    "\U000024C2-\U0001F251"
+    "\U00002600-\U000026FF"
+    "\U0000FE0F"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def strip_emojis(text: str) -> str:
+    cleaned = _EMOJI_RE.sub("", text or "")
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
+def _tts_voice_for_language(language: str) -> dict:
+    voices = {
+        "ru-RU": {
+            "languageCode": "ru-RU",
+            "name": "ru-RU-Wavenet-A",
+            "ssmlGender": "FEMALE",
+            "speakingRate": 0.88,
+            "pitch": -1.0,
+        },
+        "he-IL": {
+            "languageCode": "he-IL",
+            "name": "he-IL-Wavenet-A",
+            "ssmlGender": "FEMALE",
+            "speakingRate": 0.9,
+            "pitch": 0.0,
+        },
+        "en-US": {
+            "languageCode": "en-US",
+            "name": "en-US-Neural2-F",
+            "ssmlGender": "FEMALE",
+            "speakingRate": 0.9,
+            "pitch": 0.0,
+        },
+    }
+    return voices.get(language, voices["ru-RU"])
 
 
 def _read_prompt(relative_path: str) -> str:
@@ -111,9 +160,18 @@ def chat():
     interests = (data.get("interests") or "").strip()
     avoid_topics = (data.get("avoid_topics") or "").strip()
 
+    is_greeting = user_message == GREETING_TRIGGER
+    if is_greeting:
+        user_message = (
+            f"Пользователь {user_name} только что начал разговор. "
+            "Поприветствуй тепло по имени, одним-двумя короткими предложениями, "
+            "и задай один простой добрый вопрос. Без эмодзи."
+        )
+
     print(
         f"USER: {user_name} | AGE: {user_age or '—'} | ID: {user_id}"
         f" | PROFILE: {profile_id or '—'} | LANG: {language}"
+        f" | GREETING: {is_greeting}"
     )
 
     if not user_message:
@@ -129,7 +187,10 @@ def chat():
     )
 
     history = get_history(user_id)
-    history.append({"role": "user", "content": user_message})
+    if not is_greeting:
+        history.append({"role": "user", "content": user_message})
+    else:
+        history.append({"role": "user", "content": "[начало разговора]"})
 
     try:
         response = client.messages.create(
@@ -139,7 +200,7 @@ def chat():
             messages=history
         )
 
-        reply = response.content[0].text
+        reply = strip_emojis(response.content[0].text)
         history.append({"role": "assistant", "content": reply})
         trim_history(user_id)
 
@@ -154,7 +215,8 @@ def chat():
 @app.route("/tts", methods=["POST"])
 def tts():
     data = request.json
-    text = data.get("text", "").strip()
+    text = strip_emojis(data.get("text", "").strip())
+    language = (data.get("language") or "ru-RU").strip() or "ru-RU"
 
     if not text:
         return jsonify({"error": "Нет текста"}), 400
@@ -163,21 +225,23 @@ def tts():
     if not api_key:
         return jsonify({"error": "GOOGLE_API_KEY не задан"}), 500
 
+    voice_cfg = _tts_voice_for_language(language)
+
     print("TTS endpoint called")
     print("Text for TTS:", text[:60])
-    print("Using GOOGLE_API_KEY:", "YES" if api_key else "NO")
+    print("Language:", language)
 
     payload = {
         "input": {"text": text},
         "voice": {
-            "languageCode": "ru-RU",
-            "name": "ru-RU-Wavenet-A",   # проверенный женский WaveNet голос
-            "ssmlGender": "FEMALE"
+            "languageCode": voice_cfg["languageCode"],
+            "name": voice_cfg["name"],
+            "ssmlGender": voice_cfg["ssmlGender"],
         },
         "audioConfig": {
             "audioEncoding": "MP3",
-            "speakingRate": 0.9,
-            "pitch": 1.0
+            "speakingRate": voice_cfg["speakingRate"],
+            "pitch": voice_cfg["pitch"],
         }
     }
 
