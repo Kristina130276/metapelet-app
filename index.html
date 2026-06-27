@@ -462,6 +462,8 @@
     let dialogActive = false;
     let recognition = null;
     let lastReplyText = "";
+    let lastAudioBlob = null;
+    let lastAudioObjectUrl = null;
     let afterSpeakCallback = null;
     let cachedVoices = [];
     let isSpeaking = false;
@@ -712,9 +714,57 @@
                 }
                 window.__mpAudioCtx.resume();
             }
+            if (!window.__mpAudioUnlocked) {
+                const silent = new Audio(
+                    "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkZXNjYAA="
+                );
+                silent.volume = 0.01;
+                silent.playsInline = true;
+                silent.setAttribute("playsinline", "");
+                silent.play().then(function() {
+                    window.__mpAudioUnlocked = true;
+                }).catch(function() { /* ждём следующий жест */ });
+            }
         } catch (e) {
             console.warn("AudioContext unlock:", e);
         }
+    }
+
+    function revokeLastAudioUrl() {
+        if (lastAudioObjectUrl) {
+            URL.revokeObjectURL(lastAudioObjectUrl);
+            lastAudioObjectUrl = null;
+        }
+    }
+
+    function playAudioBlob(blob, onEnd) {
+        revokeLastAudioUrl();
+        lastAudioObjectUrl = URL.createObjectURL(blob);
+        const audio = new Audio(lastAudioObjectUrl);
+        audio.playsInline = true;
+        audio.setAttribute("playsinline", "");
+        audio.preload = "auto";
+
+        audio.onended = function() {
+            isSpeaking = false;
+            setStatus("Слушаю...");
+            if (onEnd) onEnd();
+        };
+
+        audio.onerror = function() {
+            isSpeaking = false;
+            showReplayButton();
+            setStatus("Нажмите «Прослушать ответ»");
+            if (onEnd) onEnd();
+        };
+
+        return audio.play().catch(function(err) {
+            console.warn("audio.play blocked:", err);
+            isSpeaking = false;
+            showReplayButton();
+            setStatus("Нажмите «Прослушать ответ»");
+            if (onEnd) onEnd();
+        });
     }
 
     function playReplyManually() {
@@ -722,6 +772,13 @@
         unlockAudioForMobile();
         hideReplayButton();
         setStatus("Говорю...");
+        beginSpeech();
+        if (lastAudioBlob) {
+            playAudioBlob(lastAudioBlob, function() {
+                endSpeech(true);
+            });
+            return;
+        }
         speakReply(lastReplyText, function() {
             endSpeech(true);
         });
@@ -966,7 +1023,6 @@
         }
         beginSpeech();
         unlockAudioForMobile();
-        let audioUrl = null;
         try {
             const resp = await fetch("/tts", {
                 method: "POST",
@@ -979,35 +1035,18 @@
             const contentType = resp.headers.get("content-type") || "";
             if (!contentType.includes("audio")) throw new Error("Not audio");
 
+            const voiceUsed = resp.headers.get("x-tts-voice") || "google";
+            console.log("Google TTS voice:", voiceUsed);
+
             const blob = await resp.blob();
-            audioUrl = URL.createObjectURL(blob);
-            const audio = new Audio(audioUrl);
-
-            audio.onended = function() {
-                URL.revokeObjectURL(audioUrl);
-                isSpeaking = false;
-                setStatus("Слушаю...");
-                if (onEnd) onEnd();
-            };
-
-            audio.onerror = function() {
-                URL.revokeObjectURL(audioUrl);
-                speakBrowser(spoken, onEnd);
-            };
-
-            try {
-                await audio.play();
-            } catch (playErr) {
-                URL.revokeObjectURL(audioUrl);
-                isSpeaking = false;
-                showReplayButton();
-                speakBrowser(spoken, onEnd);
-            }
+            lastAudioBlob = blob;
+            await playAudioBlob(blob, onEnd);
         } catch (e) {
-            if (audioUrl) URL.revokeObjectURL(audioUrl);
             isSpeaking = false;
-            console.warn("Server TTS unavailable, using browser voice:", e);
-            speakBrowser(spoken, onEnd);
+            console.warn("Server TTS failed (no browser fallback):", e);
+            showReplayButton();
+            setStatus("Нажмите «Прослушать ответ»");
+            if (onEnd) onEnd();
         }
     }
 

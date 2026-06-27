@@ -52,14 +52,14 @@ def _tts_voice_for_language(language: str) -> dict:
         "ru-RU": {
             "languageCode": "ru-RU",
             "names": [
-                "ru-RU-Chirp3-HD-Aoede",
                 "ru-RU-Chirp3-HD-Kore",
+                "ru-RU-Chirp3-HD-Aoede",
                 "ru-RU-Wavenet-A",
                 "ru-RU-Standard-A",
             ],
             "ssmlGender": "FEMALE",
-            "speakingRate": 0.93,
-            "pitch": 0.0,
+            "speakingRate": 0.88,
+            "pitch": -0.5,
         },
         "he-IL": {
             "languageCode": "he-IL",
@@ -331,7 +331,9 @@ def tts():
                 continue
             audio_bytes = base64.b64decode(resp.json()["audioContent"])
             print(f"TTS OK ({voice_name}): {len(audio_bytes)} байт")
-            return Response(audio_bytes, mimetype="audio/mpeg")
+            resp_out = Response(audio_bytes, mimetype="audio/mpeg")
+            resp_out.headers["X-TTS-Voice"] = voice_name
+            return resp_out
         except Exception as e:
             last_detail = str(e)
             print(f"TTS voice {voice_name} failed: {e}")
