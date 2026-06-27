@@ -33,12 +33,30 @@
         }
 
         .brand-badge {
-            display: inline-block;
-            font-size: 0.95rem;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: #7a6a4f;
-            margin-bottom: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .logo-mark {
+            width: 56px;
+            height: 56px;
+            border-radius: 18px;
+            background: linear-gradient(145deg, #ffd966 0%, #f4b942 100%);
+            color: #4a3b1f;
+            font-size: 1.7rem;
+            font-weight: 800;
+            line-height: 56px;
+            box-shadow: 0 8px 20px rgba(244, 185, 66, 0.35);
+        }
+
+        .logo-text {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #2d3436;
+            letter-spacing: -0.02em;
         }
 
         .hero h1 {
@@ -331,7 +349,10 @@
 
 <section id="landing-screen">
     <div class="hero">
-        <div class="brand-badge">MetaPelet</div>
+        <div class="brand-badge">
+            <div class="logo-mark" aria-hidden="true">M</div>
+            <div class="logo-text">MetaPelet</div>
+        </div>
         <h1>Тёплый голосовой собеседник рядом с вами</h1>
         <p class="hero-lead">Поговорите — MetaPelet слушает, поддерживает и отвечает спокойным живым голосом.</p>
         <ol class="hero-steps">
@@ -339,7 +360,7 @@
             <li>Заполните короткую анкету</li>
             <li>Говорите — MetaPelet ответит сама</li>
         </ol>
-        <button type="button" id="start-btn" class="primary-btn">Поговорить с MetaPelet</button>
+        <button type="button" id="start-btn" class="primary-btn">Поговорить</button>
     </div>
 </section>
 
@@ -391,7 +412,7 @@
     <p id="status"></p>
     <div id="reply-text" aria-live="polite"></div>
     <button type="button" id="play-reply-btn">Не слышно? Нажмите, чтобы повторить</button>
-    <details class="text-test">
+    <details class="text-test" id="text-test-block" hidden>
         <summary>Написать вместо голоса (для теста)</summary>
         <label for="text-input">Сообщение</label>
         <textarea id="text-input" rows="2" placeholder="Например: Привет, как дела?"></textarea>
@@ -406,6 +427,7 @@
     const GREETING_TRIGGER = "__greeting__";
 
     const URL_START = new URLSearchParams(window.location.search).get("start") === "1";
+    const URL_DEBUG = new URLSearchParams(window.location.search).get("debug") === "1";
 
     const PRESETS = {
         sonya: {
@@ -999,6 +1021,10 @@
             sendTextMessage();
         }
     });
+
+    if (URL_DEBUG) {
+        document.getElementById("text-test-block").hidden = false;
+    }
 
     loadAnketaFromStorage();
     applyPresetIfNeeded();

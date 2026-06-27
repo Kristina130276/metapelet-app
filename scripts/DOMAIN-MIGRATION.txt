@@ -1,0 +1,35 @@
+Перевод www.metapelet.org с Canva на MetaPelet (Render)
+======================================================
+
+Сделайте один раз (≈10 минут). После этого люди открывают только https://www.metapelet.org
+
+ШАГ A — Render (сервис metapelet-bot-flask)
+-------------------------------------------
+1. https://dashboard.render.com → metapelet-bot-flask → Settings
+2. Custom Domains → Add Custom Domain
+3. Добавьте: www.metapelet.org
+4. Добавьте: metapelet.org (Render покажет DNS для apex)
+5. Скопируйте значения DNS, которые покажет Render
+
+ШАГ B — Canva (отвязать сайт и сменить DNS)
+-------------------------------------------
+1. Canva → профиль → Settings → Web Domains
+2. metapelet.org → Manage
+3. Отвязать / Disconnect опубликованный Canva-сайт от домена
+4. DNS records → изменить:
+   - www  →  CNAME  →  metapelet-bot-flask.onrender.com
+     (или точное значение из Render Custom Domains)
+   - @ (apex) → по инструкции Render (A/ALIAS или redirect на www)
+5. Сохранить. Подождать 5–30 минут (распространение DNS)
+
+ШАГ C — Проверка
+----------------
+PowerShell из папки metapelet-app:
+  .\scripts\check-domain.ps1
+
+Или откройте https://www.metapelet.org — должны увидеть логотип M и кнопку «Поговорить».
+
+Ссылка для людей (после миграции):
+  https://www.metapelet.org
+
+Старый адрес Render продолжит работать для вас, но людям давайте только www.metapelet.org

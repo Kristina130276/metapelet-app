@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file, Response
+from flask import Flask, request, jsonify, send_file, Response, redirect
 from flask_cors import CORS
 from anthropic import Anthropic
 from dotenv import load_dotenv
@@ -200,6 +200,13 @@ def get_history(user_id: str) -> list:
 def trim_history(user_id: str):
     if len(conversations[user_id]) > MAX_MESSAGES:
         conversations[user_id] = conversations[user_id][-MAX_MESSAGES:]
+
+
+@app.before_request
+def canonical_host():
+    host = (request.host or "").split(":")[0].lower()
+    if host == "metapelet.org":
+        return redirect(f"https://www.metapelet.org{request.full_path}", code=301)
 
 
 @app.route("/")
