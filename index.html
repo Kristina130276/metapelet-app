@@ -6,12 +6,103 @@
     <title>MetaPelet</title>
     <style>
         body {
-            background: #f5f7fa;
-            font-family: Arial, sans-serif;
+            background: linear-gradient(165deg, #fff9ef 0%, #f5f7fa 45%, #eef5f0 100%);
+            font-family: "Segoe UI", Arial, sans-serif;
             text-align: center;
             margin: 0;
-            padding: 24px 16px 48px;
+            padding: 0;
             color: #333;
+            min-height: 100vh;
+        }
+
+        .screen-hidden {
+            display: none !important;
+        }
+
+        #landing-screen {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 32px 20px 48px;
+        }
+
+        .hero {
+            max-width: 560px;
+            width: 100%;
+        }
+
+        .brand-badge {
+            display: inline-block;
+            font-size: 0.95rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #7a6a4f;
+            margin-bottom: 12px;
+        }
+
+        .hero h1 {
+            font-size: clamp(2rem, 6vw, 2.75rem);
+            line-height: 1.15;
+            margin: 0 0 16px;
+            color: #2d3436;
+            font-weight: 700;
+        }
+
+        .hero-lead {
+            font-size: clamp(1.1rem, 3vw, 1.3rem);
+            line-height: 1.5;
+            color: #555;
+            margin: 0 auto 32px;
+            max-width: 480px;
+        }
+
+        .hero-steps {
+            text-align: left;
+            background: rgba(255, 255, 255, 0.72);
+            border-radius: 16px;
+            padding: 18px 20px;
+            margin: 0 auto 28px;
+            max-width: 420px;
+            font-size: 1.05rem;
+            line-height: 1.55;
+            color: #444;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+        }
+
+        .hero-steps li {
+            margin-bottom: 8px;
+        }
+
+        .hero-steps li:last-child {
+            margin-bottom: 0;
+        }
+
+        .primary-btn {
+            width: 100%;
+            max-width: 420px;
+            font-size: clamp(1.25rem, 4vw, 1.45rem);
+            padding: 22px 28px;
+            border-radius: 18px;
+            border: none;
+            background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(46, 125, 50, 0.28);
+            transition: transform 0.15s, filter 0.15s;
+        }
+
+        .primary-btn:hover {
+            filter: brightness(1.04);
+            transform: translateY(-1px);
+        }
+
+        .primary-btn:active {
+            transform: translateY(0);
+        }
+
+        #app-screen {
+            padding: 24px 16px 48px;
         }
 
         h1 {
@@ -238,8 +329,24 @@
 </head>
 <body>
 
+<section id="landing-screen">
+    <div class="hero">
+        <div class="brand-badge">MetaPelet</div>
+        <h1>Тёплый голосовой собеседник рядом с вами</h1>
+        <p class="hero-lead">Поговорите — MetaPelet слушает, поддерживает и отвечает спокойным живым голосом.</p>
+        <ol class="hero-steps">
+            <li>Нажмите «Поговорить»</li>
+            <li>Заполните короткую анкету</li>
+            <li>Говорите — MetaPelet ответит сама</li>
+        </ol>
+        <button type="button" id="start-btn" class="primary-btn">Поговорить с MetaPelet</button>
+    </div>
+</section>
+
+<section id="app-screen" class="screen-hidden">
+
 <h1 id="greeting">MetaPelet</h1>
-<p class="subtitle">Заполните анкету один раз — разговор начнётся сам</p>
+<p class="subtitle">Короткая анкета — и можно начать разговор</p>
 
 <div class="card" id="anketa-section">
     <h2>Анкета</h2>
@@ -292,9 +399,13 @@
     </details>
 </div>
 
+</section>
+
 <script>
     const URL_PROFILE_ID = new URLSearchParams(window.location.search).get("profile") || "";
     const GREETING_TRIGGER = "__greeting__";
+
+    const URL_START = new URLSearchParams(window.location.search).get("start") === "1";
 
     const PRESETS = {
         sonya: {
@@ -482,6 +593,27 @@
             anketa.interests &&
             anketa.avoid_topics
         );
+    }
+
+    function enterApp() {
+        document.getElementById("landing-screen").classList.add("screen-hidden");
+        document.getElementById("app-screen").classList.remove("screen-hidden");
+        unlockAudioForMobile();
+        setTalkEnabled(anketa.complete && isAnketaValid());
+
+        if (anketa.complete && isAnketaValid()) {
+            document.getElementById("anketa-status").textContent = "Анкета сохранена ✓";
+            setTimeout(function() {
+                if (!dialogActive) startDialog(true);
+            }, 500);
+            return;
+        }
+
+        const nameInput = document.getElementById("name-input");
+        if (nameInput) {
+            nameInput.focus();
+            nameInput.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
     }
 
     function updateGreeting() {
@@ -858,6 +990,7 @@
     }
 
     document.getElementById("save-anketa-btn").addEventListener("click", saveAnketa);
+    document.getElementById("start-btn").addEventListener("click", enterApp);
     document.getElementById("play-reply-btn").addEventListener("click", playReplyManually);
     document.getElementById("text-send-btn").addEventListener("click", sendTextMessage);
     document.getElementById("text-input").addEventListener("keydown", function(e) {
@@ -870,13 +1003,12 @@
     loadAnketaFromStorage();
     applyPresetIfNeeded();
     fillFormFromAnketa();
-    setTalkEnabled(anketa.complete && isAnketaValid());
-    if (anketa.complete) {
+    setTalkEnabled(false);
+
+    if (URL_START || URL_PROFILE_ID) {
+        enterApp();
+    } else if (anketa.complete) {
         document.getElementById("anketa-status").textContent = "Анкета сохранена ✓";
-        unlockAudioForMobile();
-        setTimeout(function() {
-            if (!dialogActive && isAnketaValid()) startDialog(true);
-        }, 1000);
     }
 </script>
 

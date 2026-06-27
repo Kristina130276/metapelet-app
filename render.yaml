@@ -1,10 +1,10 @@
-# MetaPelet Flask app — app.metapelet.org
-# Deploy: Render Dashboard → New Blueprint → connect Kristina130276/metapelet-app
-# Or sync an existing Python Web Service with this repo + branch main.
+# MetaPelet Flask — live service: metapelet-bot-flask (Render)
+# Custom domain: add www.metapelet.org in Render Dashboard → Settings → Custom Domains
+# DNS: www CNAME → metapelet-bot-flask.onrender.com
 
 services:
   - type: web
-    name: metapelet-app
+    name: metapelet-bot-flask
     runtime: python
     plan: free
     branch: main
@@ -12,7 +12,8 @@ services:
     startCommand: python -m gunicorn app:app --bind 0.0.0.0:$PORT
     healthCheckPath: /
     domains:
-      - app.metapelet.org
+      - www.metapelet.org
+      - metapelet.org
     envVars:
       - key: PYTHON_VERSION
         value: "3.13.5"
