@@ -331,6 +331,8 @@
     let lastReplyText = "";
     let afterSpeakCallback = null;
     let cachedVoices = [];
+    let isSpeaking = false;
+    let listenTimer = null;
 
     function loadVoices() {
         if (!window.speechSynthesis) return;
@@ -339,6 +341,57 @@
     if (window.speechSynthesis) {
         loadVoices();
         speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    function ensureVoicesReady() {
+        return new Promise(function(resolve) {
+            loadVoices();
+            if (cachedVoices.length > 0) {
+                resolve();
+                return;
+            }
+            if (!window.speechSynthesis) {
+                resolve();
+                return;
+            }
+            var done = false;
+            function finish() {
+                if (done) return;
+                done = true;
+                loadVoices();
+                resolve();
+            }
+            speechSynthesis.onvoiceschanged = finish;
+            setTimeout(finish, 800);
+        });
+    }
+
+    function scheduleListen(delayMs) {
+        if (!dialogActive || isSpeaking) return;
+        clearTimeout(listenTimer);
+        listenTimer = setTimeout(function() {
+            listenTimer = null;
+            if (dialogActive && !isSpeaking) listenOnce();
+        }, delayMs || 800);
+    }
+
+    function stopListening() {
+        clearTimeout(listenTimer);
+        listenTimer = null;
+        if (recognition) {
+            try { recognition.abort(); } catch (e) { /* ignore */ }
+            recognition = null;
+        }
+    }
+
+    function beginSpeech() {
+        isSpeaking = true;
+        stopListening();
+    }
+
+    function endSpeech(onContinue) {
+        isSpeaking = false;
+        if (onContinue) scheduleListen(onContinue === true ? 800 : onContinue);
     }
 
     function stripEmojis(text) {
@@ -355,19 +408,23 @@
     function pickVoice(lang) {
         const prefix = (lang || "ru-RU").split("-")[0];
         const voices = cachedVoices.length ? cachedVoices : (speechSynthesis.getVoices() || []);
-        const local = voices.filter(v => v.lang && v.lang.startsWith(prefix));
-        const ranked = local.sort((a, b) => {
-            const score = v => {
-                let s = 0;
-                if (/google/i.test(v.name)) s += 4;
-                if (/milena|katya|irina|anna|svetlana|helena|yandex/i.test(v.name)) s += 3;
-                if (/natural|neural|premium|wavenet/i.test(v.name)) s += 2;
-                if (/female|woman|жен/i.test(v.name + v.voiceURI)) s += 1;
-                return s;
-            };
-            return score(b) - score(a);
-        });
-        return ranked[0] || voices.find(v => v.lang && v.lang.startsWith(prefix)) || null;
+        const local = voices.filter(function(v) { return v.lang && v.lang.startsWith(prefix); });
+
+        function voiceScore(v) {
+            var s = 0;
+            var name = (v.name + " " + (v.voiceURI || "")).toLowerCase();
+            if (!v.localService) s += 12;
+            if (/google/.test(name)) s += 8;
+            if (/natural|neural|premium|wavenet|online/.test(name)) s += 5;
+            if (/milena|katya|irina|anna|svetlana|helena|daria|marina/.test(name)) s += 4;
+            if (/female|woman/.test(name)) s += 2;
+            if (/microsoft/.test(name) && v.localService) s -= 6;
+            if (/desktop|mobile/.test(name) && v.localService) s -= 3;
+            return s;
+        }
+
+        local.sort(function(a, b) { return voiceScore(b) - voiceScore(a); });
+        return local[0] || voices.find(function(v) { return v.lang && v.lang.startsWith(prefix); }) || null;
     }
 
     function hideReplayButton() {
@@ -512,11 +569,7 @@
         hideReplayButton();
         setStatus("Говорю...");
         speakReply(lastReplyText, function() {
-            if (dialogActive && afterSpeakCallback) {
-                afterSpeakCallback();
-            } else if (dialogActive) {
-                listenOnce();
-            }
+            endSpeech(true);
         });
     }
 
@@ -553,62 +606,95 @@
         dialogActive = true;
         setBtn(true);
         unlockAudioForMobile();
-        if (withGreeting) {
-            sendUserMessage(GREETING_TRIGGER, true);
-        } else {
-            listenOnce();
-        }
+        ensureVoicesReady().then(function() {
+            if (withGreeting) {
+                sendUserMessage(GREETING_TRIGGER, true);
+            } else {
+                scheduleListen(300);
+            }
+        });
     }
 
     function stopDialog(statusText) {
         dialogActive = false;
+        isSpeaking = false;
         setBtn(false);
         setStatus(statusText || "Диалог завершён");
-        if (recognition) {
-            recognition.abort();
-            recognition = null;
+        stopListening();
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
         }
     }
 
     function listenOnce() {
-        if (!dialogActive) return;
+        if (!dialogActive || isSpeaking) return;
+        if (recognition) return;
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) return;
+
         recognition = new SpeechRecognition();
         recognition.lang = speechLangForAnketa();
         recognition.interimResults = false;
+        recognition.continuous = false;
         recognition.maxAlternatives = 1;
+        recognition._gotResult = false;
 
         setStatus("Слушаю...");
-        recognition.start();
 
         recognition.onresult = async function(event) {
+            recognition._gotResult = true;
             const userMessage = event.results[0][0].transcript;
+            const rec = recognition;
             recognition = null;
+            if (rec) {
+                try { rec.stop(); } catch (e) { /* ignore */ }
+            }
             await sendUserMessage(userMessage);
         };
 
-        recognition.onspeechend = function() {
-            recognition.stop();
+        recognition.onend = function() {
+            if (recognition && recognition._gotResult) {
+                recognition = null;
+                return;
+            }
+            recognition = null;
+            if (dialogActive && !isSpeaking) {
+                scheduleListen(500);
+            }
         };
 
         recognition.onerror = function(event) {
             console.error("SpeechRecognition error:", event.error);
+            const hadResult = recognition && recognition._gotResult;
             recognition = null;
+            if (hadResult) return;
+
             if (event.error === "no-speech") {
-                setStatus("Не услышала... слушаю снова.");
-                setTimeout(() => listenOnce(), 1500);
+                setStatus("Не услышала... ещё раз.");
+                scheduleListen(1200);
             } else if (event.error === "network") {
-                setStatus("Микрофон недоступен (нет связи). Напишите сообщение ниже.");
-                stopDialog();
+                setStatus("Микрофон: нет связи. Пробую снова...");
+                scheduleListen(2500);
             } else if (event.error === "aborted") {
-                // stopDialog() или повторный start()
+                if (dialogActive && !isSpeaking) {
+                    scheduleListen(700);
+                }
             } else if (event.error === "not-allowed") {
                 stopDialog("Разрешите доступ к микрофону в настройках браузера.");
             } else {
-                stopDialog("Ошибка микрофона: " + event.error);
+                setStatus("Микрофон: " + event.error + ". Пробую снова...");
+                scheduleListen(2000);
             }
         };
+
+        try {
+            recognition.start();
+        } catch (e) {
+            console.error("recognition.start failed:", e);
+            recognition = null;
+            scheduleListen(1500);
+        }
     }
 
     async function sendUserMessage(userMessage, isGreeting) {
@@ -649,16 +735,15 @@
 
             const data = await response.json();
             showReply(data.reply);
-            afterSpeakCallback = dialogActive ? listenOnce : null;
             setStatus("Говорю...");
             speakReply(data.reply, function() {
-                if (dialogActive) listenOnce();
+                endSpeech(true);
             });
         } catch (err) {
             console.error("Ошибка /chat:", err);
             setStatus("Что-то пошло не так...");
             speakReply("Что-то пошло не так. Попробуй ещё раз.", function() {
-                if (dialogActive) listenOnce();
+                endSpeech(true);
             });
         }
     }
@@ -681,7 +766,9 @@
             if (onEnd) onEnd();
             return;
         }
+        beginSpeech();
         if (!window.speechSynthesis) {
+            isSpeaking = false;
             setStatus("Готово — читайте текст ответа выше");
             showReplayButton();
             if (onEnd) onEnd();
@@ -691,13 +778,20 @@
         const utterance = new SpeechSynthesisUtterance(spoken);
         utterance.lang = speechLangForAnketa();
         const voice = pickVoice(speechLangForAnketa());
-        if (voice) utterance.voice = voice;
-        utterance.rate = 0.86;
-        utterance.pitch = 1.05;
+        if (voice) {
+            utterance.voice = voice;
+            console.log("Browser voice:", voice.name, voice.localService ? "local" : "online");
+        }
+        utterance.rate = 0.92;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
         let finished = false;
+        let fallbackTimer = null;
         function done() {
             if (finished) return;
             finished = true;
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            isSpeaking = false;
             setStatus("Слушаю...");
             if (onEnd) onEnd();
         }
@@ -707,7 +801,7 @@
             done();
         };
         window.speechSynthesis.speak(utterance);
-        setTimeout(done, Math.min(20000, spoken.length * 130 + 2500));
+        fallbackTimer = setTimeout(done, Math.max(45000, spoken.length * 220 + 6000));
     }
 
     async function speakReply(text, onEnd) {
@@ -716,6 +810,7 @@
             if (onEnd) onEnd();
             return;
         }
+        beginSpeech();
         unlockAudioForMobile();
         let audioUrl = null;
         try {
@@ -736,6 +831,7 @@
 
             audio.onended = function() {
                 URL.revokeObjectURL(audioUrl);
+                isSpeaking = false;
                 setStatus("Слушаю...");
                 if (onEnd) onEnd();
             };
@@ -749,11 +845,13 @@
                 await audio.play();
             } catch (playErr) {
                 URL.revokeObjectURL(audioUrl);
+                isSpeaking = false;
                 showReplayButton();
                 speakBrowser(spoken, onEnd);
             }
         } catch (e) {
             if (audioUrl) URL.revokeObjectURL(audioUrl);
+            isSpeaking = false;
             console.warn("Server TTS unavailable, using browser voice:", e);
             speakBrowser(spoken, onEnd);
         }

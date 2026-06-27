@@ -47,30 +47,31 @@ def strip_emojis(text: str) -> str:
 
 
 def _tts_voice_for_language(language: str) -> dict:
-    voices = {
+    """Голоса Google TTS — Neural2 предпочтительнее Wavenet."""
+    presets = {
         "ru-RU": {
             "languageCode": "ru-RU",
-            "name": "ru-RU-Wavenet-A",
+            "names": ["ru-RU-Neural2-A", "ru-RU-Wavenet-A", "ru-RU-Standard-A"],
             "ssmlGender": "FEMALE",
-            "speakingRate": 0.88,
-            "pitch": -1.0,
+            "speakingRate": 0.92,
+            "pitch": -0.5,
         },
         "he-IL": {
             "languageCode": "he-IL",
-            "name": "he-IL-Wavenet-A",
+            "names": ["he-IL-Wavenet-A", "he-IL-Standard-A"],
             "ssmlGender": "FEMALE",
-            "speakingRate": 0.9,
+            "speakingRate": 0.92,
             "pitch": 0.0,
         },
         "en-US": {
             "languageCode": "en-US",
-            "name": "en-US-Neural2-F",
+            "names": ["en-US-Neural2-F", "en-US-Wavenet-F"],
             "ssmlGender": "FEMALE",
-            "speakingRate": 0.9,
+            "speakingRate": 0.92,
             "pitch": 0.0,
         },
     }
-    return voices.get(language, voices["ru-RU"])
+    return presets.get(language, presets["ru-RU"])
 
 
 def _read_prompt(relative_path: str) -> str:
@@ -226,37 +227,42 @@ def tts():
         return jsonify({"error": "GOOGLE_API_KEY не задан"}), 500
 
     voice_cfg = _tts_voice_for_language(language)
+    voice_names = voice_cfg.get("names") or [voice_cfg.get("name", "ru-RU-Wavenet-A")]
 
     print("TTS endpoint called")
     print("Text for TTS:", text[:60])
     print("Language:", language)
 
-    payload = {
-        "input": {"text": text},
-        "voice": {
-            "languageCode": voice_cfg["languageCode"],
-            "name": voice_cfg["name"],
-            "ssmlGender": voice_cfg["ssmlGender"],
-        },
-        "audioConfig": {
-            "audioEncoding": "MP3",
-            "speakingRate": voice_cfg["speakingRate"],
-            "pitch": voice_cfg["pitch"],
-        }
-    }
-
     url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={api_key}"
+    last_error = None
 
-    try:
-        resp = http_requests.post(url, json=payload, timeout=10)
-        resp.raise_for_status()
-        audio_bytes = base64.b64decode(resp.json()["audioContent"])
-        print(f"TTS OK: {len(audio_bytes)} байт")
-        return Response(audio_bytes, mimetype="audio/mpeg")
+    for voice_name in voice_names:
+        payload = {
+            "input": {"text": text},
+            "voice": {
+                "languageCode": voice_cfg["languageCode"],
+                "name": voice_name,
+                "ssmlGender": voice_cfg["ssmlGender"],
+            },
+            "audioConfig": {
+                "audioEncoding": "MP3",
+                "speakingRate": voice_cfg["speakingRate"],
+                "pitch": voice_cfg["pitch"],
+                "volumeGainDb": 1.5,
+            },
+        }
+        try:
+            resp = http_requests.post(url, json=payload, timeout=15)
+            resp.raise_for_status()
+            audio_bytes = base64.b64decode(resp.json()["audioContent"])
+            print(f"TTS OK ({voice_name}): {len(audio_bytes)} байт")
+            return Response(audio_bytes, mimetype="audio/mpeg")
+        except Exception as e:
+            last_error = e
+            print(f"TTS voice {voice_name} failed: {e}")
 
-    except Exception as e:
-        print(f"Ошибка Google TTS: {e}")
-        return jsonify({"error": str(e)}), 500
+    print(f"Ошибка Google TTS: {last_error}")
+    return jsonify({"error": str(last_error)}), 500
 
 
 if __name__ == "__main__":
