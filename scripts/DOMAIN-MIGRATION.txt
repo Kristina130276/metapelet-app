@@ -16,10 +16,10 @@
 1. Canva → профиль → Settings → Web Domains
 2. metapelet.org → Manage
 3. Отвязать / Disconnect опубликованный Canva-сайт от домена
-4. DNS records → изменить:
+4. DNS records → изменить (значения из Render, уже добавлены 20.05.2026):
    - www  →  CNAME  →  metapelet-bot-flask.onrender.com
-     (или точное значение из Render Custom Domains)
-   - @ (apex) → по инструкции Render (A/ALIAS или redirect на www)
+   - @ (apex) →  CNAME  →  metapelet-bot-flask.onrender.com
+     (если Canva не принимает CNAME на @ — A-запись → 216.24.57.1)
 5. Сохранить. Подождать 5–30 минут (распространение DNS)
 
 ШАГ C — Проверка
