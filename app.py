@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, send_file, Response, redirect
 from flask_cors import CORS
 from anthropic import Anthropic
+from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import base64
@@ -13,7 +14,25 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+MODEL_PROVIDER = (os.environ.get("MODEL_PROVIDER") or "openai").strip().lower()
+OPENAI_MODEL = "gpt-5.6"
+ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+_openai_client = None
+_anthropic_client = None
+
+
+def get_openai_client() -> OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    return _openai_client
+
+
+def get_anthropic_client() -> Anthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    return _anthropic_client
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 PROFILE_FILES = {
@@ -271,14 +290,24 @@ def chat():
         history.append({"role": "user", "content": "[начало разговора]"})
 
     try:
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=200,
-            system=system_prompt,
-            messages=history
-        )
+        if MODEL_PROVIDER == "anthropic":
+            response = get_anthropic_client().messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=200,
+                system=system_prompt,
+                messages=history,
+            )
+            reply_text = response.content[0].text
+        else:
+            messages = [{"role": "system", "content": system_prompt}] + history
+            response = get_openai_client().chat.completions.create(
+                model=OPENAI_MODEL,
+                max_completion_tokens=200,
+                messages=messages,
+            )
+            reply_text = response.choices[0].message.content or ""
 
-        reply = strip_emojis(response.content[0].text)
+        reply = strip_emojis(reply_text)
         history.append({"role": "assistant", "content": reply})
         trim_history(user_id)
 
@@ -286,7 +315,7 @@ def chat():
 
     except Exception as e:
         history.pop()
-        print(f"Ошибка Claude API: {e}")
+        print(f"Ошибка {MODEL_PROVIDER} API: {e}")
         return jsonify({"reply": "Что-то пошло не так. Попробуй сказать ещё раз."}), 500
 
 
