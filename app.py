@@ -17,7 +17,7 @@ client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 PROFILE_FILES = {
-    "sonya": "profiles/sonya.txt",
+    "demo": "profiles/demo.txt",
 }
 
 # Словарь: user_id → история сообщений
