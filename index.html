@@ -277,6 +277,48 @@
             display: block;
         }
 
+        #feedback-section {
+            max-width: 520px;
+            margin: 24px auto 0;
+        }
+
+        .feedback-row {
+            margin-bottom: 16px;
+        }
+
+        .feedback-row > label:first-child {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #444;
+        }
+
+        .feedback-options label {
+            display: inline-block;
+            margin: 0 14px 8px 0;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        #submit-feedback-btn {
+            width: 100%;
+            font-size: 1.1rem;
+            padding: 14px 20px;
+            border-radius: 14px;
+            border: none;
+            background: #2e7d32;
+            color: white;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+
+        #feedback-thanks {
+            text-align: center;
+            color: #2e7d32;
+            font-size: 1.05rem;
+            margin-top: 12px;
+        }
+
         #play-reply-btn {
             display: none;
             width: 100%;
@@ -420,6 +462,46 @@
     </details>
 </div>
 
+<div class="card screen-hidden" id="feedback-section">
+    <h2>Короткий отзыв (анонимно)</h2>
+    <p class="hint">Помогите улучшить пилот — без имени и других личных данных</p>
+
+    <div class="feedback-row">
+        <label>Было ли удобно пользоваться?</label>
+        <div class="feedback-options">
+            <label><input type="radio" name="fb-comfort" value="yes"> Да</label>
+            <label><input type="radio" name="fb-comfort" value="partial"> Частично</label>
+            <label><input type="radio" name="fb-comfort" value="no"> Нет</label>
+        </div>
+    </div>
+
+    <div class="feedback-row">
+        <label>Понравился ли разговор?</label>
+        <div class="feedback-options">
+            <label><input type="radio" name="fb-liked" value="yes"> Да</label>
+            <label><input type="radio" name="fb-liked" value="partial"> Частично</label>
+            <label><input type="radio" name="fb-liked" value="no"> Нет</label>
+        </div>
+    </div>
+
+    <div class="field">
+        <label for="fb-issues">Что было непонятно или неуместно?</label>
+        <textarea id="fb-issues" rows="3" placeholder="Можно оставить пустым"></textarea>
+    </div>
+
+    <div class="feedback-row">
+        <label>Хотите продолжить бесплатный пилот?</label>
+        <div class="feedback-options">
+            <label><input type="radio" name="fb-continue" value="yes"> Да</label>
+            <label><input type="radio" name="fb-continue" value="maybe"> Возможно</label>
+            <label><input type="radio" name="fb-continue" value="no"> Нет</label>
+        </div>
+    </div>
+
+    <button type="button" id="submit-feedback-btn">Отправить отзыв</button>
+    <p id="feedback-thanks" class="screen-hidden">Спасибо! Отзыв сохранён.</p>
+</div>
+
 </section>
 
 <script>
@@ -448,6 +530,134 @@
         return id;
     }
     const USER_ID = getUserId();
+
+    const PILOT_SESSION_KEY = "metapelet_pilot_session_id";
+    const PILOT_UTM_KEY = "metapelet_pilot_utm";
+    const PILOT_FLAGS_KEY = "metapelet_pilot_flags";
+    const PILOT_FEEDBACK_DONE_KEY = "metapelet_pilot_feedback_done";
+
+    function getPilotSessionId() {
+        let id = localStorage.getItem(PILOT_SESSION_KEY);
+        if (!id) {
+            id = "ps_" + (window.crypto && crypto.randomUUID
+                ? crypto.randomUUID()
+                : Math.random().toString(36).slice(2, 12));
+            localStorage.setItem(PILOT_SESSION_KEY, id);
+        }
+        return id;
+    }
+
+    function getPilotUtm() {
+        try {
+            return JSON.parse(localStorage.getItem(PILOT_UTM_KEY) || "{}");
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function capturePilotUtm() {
+        const p = new URLSearchParams(window.location.search);
+        const incoming = {
+            utm_source: p.get("utm_source") || "",
+            utm_campaign: p.get("utm_campaign") || "",
+            utm_content: p.get("utm_content") || p.get("f") || ""
+        };
+        if (incoming.utm_source || incoming.utm_campaign || incoming.utm_content) {
+            localStorage.setItem(PILOT_UTM_KEY, JSON.stringify(incoming));
+        }
+        return getPilotUtm();
+    }
+
+    function pilotFlag(name) {
+        let flags = {};
+        try {
+            flags = JSON.parse(localStorage.getItem(PILOT_FLAGS_KEY) || "{}");
+        } catch (e) { /* ignore */ }
+        if (flags[name]) return false;
+        flags[name] = true;
+        localStorage.setItem(PILOT_FLAGS_KEY, JSON.stringify(flags));
+        return true;
+    }
+
+    async function pilotEvent(name, meta) {
+        const utm = getPilotUtm();
+        try {
+            await fetch("/pilot/event", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    session_id: getPilotSessionId(),
+                    event: name,
+                    utm_source: utm.utm_source || "",
+                    utm_campaign: utm.utm_campaign || "",
+                    utm_content: utm.utm_content || "",
+                    meta: meta || {}
+                })
+            });
+        } catch (e) {
+            console.warn("pilot event", name, e);
+        }
+    }
+
+    function pilotEventOnce(name, meta) {
+        if (!pilotFlag(name)) return;
+        pilotEvent(name, meta);
+    }
+
+    function showFeedbackIfNeeded() {
+        if (localStorage.getItem(PILOT_FEEDBACK_DONE_KEY)) return;
+        document.getElementById("feedback-section").classList.remove("screen-hidden");
+    }
+
+    async function submitPilotFeedback() {
+        const comfortable = (document.querySelector('input[name="fb-comfort"]:checked') || {}).value;
+        const liked = (document.querySelector('input[name="fb-liked"]:checked') || {}).value;
+        const continuePilot = (document.querySelector('input[name="fb-continue"]:checked') || {}).value;
+        if (!comfortable || !liked || !continuePilot) {
+            alert("Пожалуйста, ответьте на все вопросы с вариантами ответа.");
+            return;
+        }
+        const utm = getPilotUtm();
+        const issues = (document.getElementById("fb-issues").value || "").trim();
+        try {
+            const resp = await fetch("/pilot/feedback", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    session_id: getPilotSessionId(),
+                    comfortable: comfortable,
+                    liked: liked,
+                    continue_pilot: continuePilot,
+                    issues: issues,
+                    utm_source: utm.utm_source || "",
+                    utm_campaign: utm.utm_campaign || "",
+                    utm_content: utm.utm_content || ""
+                })
+            });
+            if (!resp.ok) throw new Error("feedback failed");
+            localStorage.setItem(PILOT_FEEDBACK_DONE_KEY, "1");
+            document.getElementById("submit-feedback-btn").classList.add("screen-hidden");
+            document.getElementById("feedback-thanks").classList.remove("screen-hidden");
+        } catch (e) {
+            console.error("feedback", e);
+            alert("Не удалось отправить отзыв. Попробуйте ещё раз.");
+        }
+    }
+
+    function bindAnketaStartedTracking() {
+        const ids = ["name-input", "age-input", "language-input", "interests-input", "avoid-input"];
+        function onFirstFocus() {
+            pilotEventOnce("anketa_started");
+            ids.forEach(function(id) {
+                const el = document.getElementById(id);
+                if (el) el.removeEventListener("focus", onFirstFocus);
+            });
+        }
+        ids.forEach(function(id) {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener("focus", onFirstFocus);
+        });
+    }
 
     let anketa = {
         name: "",
@@ -623,6 +833,7 @@
         document.getElementById("landing-screen").classList.add("screen-hidden");
         document.getElementById("app-screen").classList.remove("screen-hidden");
         unlockAudioForMobile();
+        pilotEventOnce("anketa_started");
         setTalkEnabled(anketa.complete && isAnketaValid());
 
         if (anketa.complete && isAnketaValid()) {
@@ -667,6 +878,7 @@
         }
         anketa.complete = true;
         localStorage.setItem("metapelet_anketa", JSON.stringify(anketa));
+        pilotEventOnce("anketa_saved", { language: anketa.language || "ru-RU" });
         document.getElementById("anketa-status").textContent =
             "Анкета сохранена ✓";
         updateGreeting();
@@ -815,6 +1027,7 @@
             return;
         }
         dialogActive = true;
+        pilotEventOnce("voice_started");
         setBtn(true);
         unlockAudioForMobile();
         ensureVoicesReady().then(function() {
@@ -945,6 +1158,8 @@
             if (!response.ok) throw new Error("Сервер не ответил");
 
             const data = await response.json();
+            pilotEventOnce("conversation");
+            showFeedbackIfNeeded();
             showReply(data.reply);
             setStatus("Говорю...");
             speakReply(data.reply, function() {
@@ -1052,6 +1267,7 @@
 
     document.getElementById("save-anketa-btn").addEventListener("click", saveAnketa);
     document.getElementById("start-btn").addEventListener("click", enterApp);
+    document.getElementById("submit-feedback-btn").addEventListener("click", submitPilotFeedback);
     document.getElementById("play-reply-btn").addEventListener("click", playReplyManually);
     document.getElementById("text-send-btn").addEventListener("click", sendTextMessage);
     document.getElementById("text-input").addEventListener("keydown", function(e) {
@@ -1069,6 +1285,14 @@
     applyPresetIfNeeded();
     fillFormFromAnketa();
     setTalkEnabled(false);
+    capturePilotUtm();
+    pilotEventOnce("site_visit");
+    bindAnketaStartedTracking();
+
+    if (localStorage.getItem(PILOT_FEEDBACK_DONE_KEY)) {
+        document.getElementById("submit-feedback-btn").classList.add("screen-hidden");
+        document.getElementById("feedback-thanks").classList.remove("screen-hidden");
+    }
 
     if (URL_START || URL_PROFILE_ID) {
         enterApp();

@@ -10,6 +10,8 @@ from pathlib import Path
 
 load_dotenv()
 
+import pilot_tracking as pilot
+
 app = Flask(__name__)
 CORS(app)
 
@@ -221,6 +223,54 @@ def canonical_host():
 @app.route("/")
 def home():
     return send_file("index.html")
+
+
+@app.route("/pilot/event", methods=["POST"])
+def pilot_event():
+    data = request.json or {}
+    ok, err = pilot.record_event(
+        session_id=data.get("session_id", ""),
+        event=data.get("event", ""),
+        utm_source=data.get("utm_source", ""),
+        utm_campaign=data.get("utm_campaign", ""),
+        utm_content=data.get("utm_content", ""),
+        meta=data.get("meta"),
+    )
+    if not ok:
+        return jsonify({"ok": False, "error": err}), 400
+    return jsonify({"ok": True})
+
+
+@app.route("/pilot/feedback", methods=["POST"])
+def pilot_feedback():
+    data = request.json or {}
+    ok, err = pilot.record_feedback(
+        session_id=data.get("session_id", ""),
+        comfortable=data.get("comfortable", ""),
+        liked=data.get("liked", ""),
+        continue_pilot=data.get("continue_pilot", ""),
+        issues=data.get("issues", ""),
+        utm_source=data.get("utm_source", ""),
+        utm_campaign=data.get("utm_campaign", ""),
+        utm_content=data.get("utm_content", ""),
+    )
+    if not ok:
+        return jsonify({"ok": False, "error": err}), 400
+    return jsonify({"ok": True})
+
+
+@app.route("/pilot/summary", methods=["GET"])
+def pilot_summary():
+    token = request.args.get("token", "")
+    if not pilot.admin_token_ok(token):
+        return "Доступ закрыт. Нужен параметр token.", 403
+    summary = pilot.build_summary()
+    if request.args.get("format") == "json":
+        return jsonify(summary)
+    return Response(
+        pilot.summary_html(summary),
+        mimetype="text/html; charset=utf-8",
+    )
 
 
 @app.route("/chat", methods=["POST"])
