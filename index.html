@@ -954,6 +954,22 @@
         hideReplayButton();
     }
 
+    // iPhone разрешает звук без нажатия только тому плееру, который уже
+    // запускался во время нажатия. Поэтому держим ОДИН постоянный плеер
+    // и «будим» его при каждом нажатии человека.
+    const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkZXNjYAA=";
+    let mpAudio = null;
+
+    function getAudioEl() {
+        if (!mpAudio) {
+            mpAudio = new Audio();
+            mpAudio.playsInline = true;
+            mpAudio.setAttribute("playsinline", "");
+            mpAudio.preload = "auto";
+        }
+        return mpAudio;
+    }
+
     function unlockAudioForMobile() {
         try {
             const AC = window.AudioContext || window.webkitAudioContext;
@@ -963,20 +979,37 @@
                 }
                 window.__mpAudioCtx.resume();
             }
-            if (!window.__mpAudioUnlocked) {
-                const silent = new Audio(
-                    "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkZXNjYAA="
-                );
-                silent.volume = 0.01;
-                silent.playsInline = true;
-                silent.setAttribute("playsinline", "");
-                silent.play().then(function() {
+            if (!isSpeaking) {
+                const a = getAudioEl();
+                a.onended = null;
+                a.onerror = null;
+                a.src = SILENT_WAV;
+                a.volume = 1.0;
+                a.play().then(function() {
                     window.__mpAudioUnlocked = true;
                 }).catch(function() { /* ждём следующий жест */ });
             }
         } catch (e) {
             console.warn("AudioContext unlock:", e);
         }
+    }
+
+    // Запасной путь: уже разбуженный AudioContext может играть без нажатия.
+    async function playViaAudioContext(blob, onEnd) {
+        const ctx = window.__mpAudioCtx;
+        if (!ctx) throw new Error("no AudioContext");
+        if (ctx.state !== "running") await ctx.resume();
+        if (ctx.state !== "running") throw new Error("AudioContext not running");
+        const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.onended = function() {
+            isSpeaking = false;
+            setStatus("Слушаю...");
+            if (onEnd) onEnd();
+        };
+        src.start(0);
     }
 
     function revokeLastAudioUrl() {
@@ -989,30 +1022,42 @@
     function playAudioBlob(blob, onEnd) {
         revokeLastAudioUrl();
         lastAudioObjectUrl = URL.createObjectURL(blob);
-        const audio = new Audio(lastAudioObjectUrl);
-        audio.playsInline = true;
-        audio.setAttribute("playsinline", "");
-        audio.preload = "auto";
+        const audio = getAudioEl();
+        let settled = false;
+        function fail() {
+            if (settled) return;
+            settled = true;
+            isSpeaking = false;
+            showReplayButton();
+            setStatus("Нажмите «Прослушать ответ»");
+            if (onEnd) onEnd();
+        }
 
         audio.onended = function() {
+            if (settled) return;
+            settled = true;
             isSpeaking = false;
             setStatus("Слушаю...");
             if (onEnd) onEnd();
         };
-
         audio.onerror = function() {
-            isSpeaking = false;
-            showReplayButton();
-            setStatus("Нажмите «Прослушать ответ»");
-            if (onEnd) onEnd();
+            if (settled) return;
+            audio.onended = null;
+            audio.onerror = null;
+            playViaAudioContext(blob, function() { settled = true; if (onEnd) onEnd(); })
+                .catch(fail);
         };
+        audio.src = lastAudioObjectUrl;
 
         return audio.play().catch(function(err) {
-            console.warn("audio.play blocked:", err);
-            isSpeaking = false;
-            showReplayButton();
-            setStatus("Нажмите «Прослушать ответ»");
-            if (onEnd) onEnd();
+            console.warn("audio.play blocked, trying AudioContext:", err);
+            audio.onended = null;
+            audio.onerror = null;
+            return playViaAudioContext(blob, function() { settled = true; if (onEnd) onEnd(); })
+                .catch(function(e2) {
+                    console.warn("AudioContext playback failed:", e2);
+                    fail();
+                });
         });
     }
 
