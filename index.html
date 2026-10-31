@@ -219,6 +219,7 @@
             min-height: 1.4em;
         }
 
+        #talk-btn { display:block; width:100%; font-size:1.5em; padding:22px; margin:14px 0; }
         #talk-section {
             max-width: 520px;
             margin: 0 auto;
@@ -451,6 +452,7 @@
 <div class="card locked" id="talk-section">
     <p class="hint" id="talk-hint">Сохраните анкету, чтобы открыть разговор</p>
     <button id="btn" type="button" disabled onclick="toggleDialog()">Завершить разговор</button>
+    <button type="button" id="talk-btn" class="primary-btn" hidden>Нажмите и говорите</button>
     <p id="status"></p>
     <div id="reply-text" aria-live="polite"></div>
     <button type="button" id="play-reply-btn">Не слышно? Нажмите, чтобы повторить</button>
@@ -677,6 +679,30 @@
     let afterSpeakCallback = null;
     let cachedVoices = [];
     let isSpeaking = false;
+    let awaitingReply = false;
+    // iPhone/iPad (включая Chrome на iOS — он работает на движке Safari):
+    // распознавание речи надёжно стартует только по нажатию человека.
+    const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    let tapToTalk = IS_IOS;
+    let autoListenFailures = 0;
+
+    function showTalkButton(show) {
+        const b = document.getElementById("talk-btn");
+        if (b) b.hidden = !show;
+    }
+
+    function enableTapToTalk(reason) {
+        tapToTalk = true;
+        console.warn("Tap-to-talk mode:", reason);
+    }
+
+    function onTalkButton() {
+        if (!dialogActive) { startDialog(false); }
+        unlockAudioForMobile();
+        showTalkButton(false);
+        listenOnce();
+    }
     let listenTimer = null;
 
     function loadVoices() {
@@ -711,12 +737,22 @@
         });
     }
 
+    function shouldListen() {
+        return dialogActive && !isSpeaking && !awaitingReply;
+    }
+
     function scheduleListen(delayMs) {
-        if (!dialogActive || isSpeaking) return;
+        if (!shouldListen()) return;
+        if (tapToTalk) {
+            clearTimeout(listenTimer);
+            showTalkButton(true);
+            setStatus("Нажмите большую кнопку и говорите");
+            return;
+        }
         clearTimeout(listenTimer);
         listenTimer = setTimeout(function() {
             listenTimer = null;
-            if (dialogActive && !isSpeaking) listenOnce();
+            if (shouldListen()) listenOnce();
         }, delayMs || 800);
     }
 
@@ -736,6 +772,7 @@
 
     function endSpeech(onContinue) {
         isSpeaking = false;
+        awaitingReply = false;
         if (onContinue) scheduleListen(onContinue === true ? 800 : onContinue);
     }
 
@@ -1042,6 +1079,8 @@
     function stopDialog(statusText) {
         dialogActive = false;
         isSpeaking = false;
+        awaitingReply = false;
+        showTalkButton(false);
         setBtn(false);
         setStatus(statusText || "Диалог завершён");
         stopListening();
@@ -1051,48 +1090,49 @@
     }
 
     function listenOnce() {
-        if (!dialogActive || isSpeaking) return;
+        if (!shouldListen()) return;
         if (recognition) return;
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) return;
+        if (!SpeechRecognition) {
+            showTalkButton(false);
+            document.getElementById("text-test-block").hidden = false;
+            setStatus("Этот браузер не умеет слушать. Напишите сообщение ниже.");
+            return;
+        }
 
-        recognition = new SpeechRecognition();
-        recognition.lang = speechLangForAnketa();
-        recognition.interimResults = false;
-        recognition.continuous = false;
-        recognition.maxAlternatives = 1;
-        recognition._gotResult = false;
+        const rec = new SpeechRecognition();
+        recognition = rec;
+        rec.lang = speechLangForAnketa();
+        rec.interimResults = false;
+        rec.continuous = false;
+        rec.maxAlternatives = 1;
+        rec._gotResult = false;
 
         setStatus("Слушаю...");
 
-        recognition.onresult = async function(event) {
-            recognition._gotResult = true;
-            const userMessage = event.results[0][0].transcript;
-            const rec = recognition;
-            recognition = null;
-            if (rec) {
-                try { rec.stop(); } catch (e) { /* ignore */ }
-            }
+        rec.onresult = async function(event) {
+            const userMessage = (event.results[0][0].transcript || "").trim();
+            if (!userMessage) return;
+            rec._gotResult = true;
+            autoListenFailures = 0;
+            awaitingReply = true;
+            if (recognition === rec) recognition = null;
+            try { rec.stop(); } catch (e) { /* ignore */ }
             await sendUserMessage(userMessage);
         };
 
-        recognition.onend = function() {
-            if (recognition && recognition._gotResult) {
-                recognition = null;
-                return;
-            }
-            recognition = null;
-            if (dialogActive && !isSpeaking) {
-                scheduleListen(500);
-            }
+        rec.onend = function() {
+            if (recognition === rec) recognition = null;
+            if (rec._gotResult || awaitingReply) return;
+            if (shouldListen()) scheduleListen(500);
         };
 
-        recognition.onerror = function(event) {
+        rec.onerror = function(event) {
             console.error("SpeechRecognition error:", event.error);
-            const hadResult = recognition && recognition._gotResult;
-            recognition = null;
-            if (hadResult) return;
+            const hadResult = rec._gotResult;
+            if (recognition === rec) recognition = null;
+            if (hadResult || awaitingReply) return;
 
             if (event.error === "no-speech") {
                 setStatus("Не услышала... ещё раз.");
@@ -1101,22 +1141,33 @@
                 setStatus("Микрофон: нет связи. Пробую снова...");
                 scheduleListen(2500);
             } else if (event.error === "aborted") {
-                if (dialogActive && !isSpeaking) {
-                    scheduleListen(700);
-                }
+                if (shouldListen()) scheduleListen(700);
             } else if (event.error === "not-allowed") {
-                stopDialog("Разрешите доступ к микрофону в настройках браузера.");
+                stopDialog(IS_IOS
+                    ? "Разрешите микрофон: Настройки iPhone → Chrome → Микрофон, затем обновите страницу."
+                    : "Разрешите доступ к микрофону в настройках браузера.");
+            } else if (event.error === "service-not-allowed" || event.error === "audio-capture") {
+                enableTapToTalk(event.error);
+                if (IS_IOS && event.error === "service-not-allowed") {
+                    setStatus("Включите диктовку: Настройки → Основные → Клавиатура → Диктовка. Затем нажмите кнопку.");
+                    showTalkButton(true);
+                } else {
+                    scheduleListen(0);
+                }
             } else {
+                autoListenFailures++;
+                if (autoListenFailures >= 2) enableTapToTalk(event.error);
                 setStatus("Микрофон: " + event.error + ". Пробую снова...");
                 scheduleListen(2000);
             }
         };
 
         try {
-            recognition.start();
+            rec.start();
         } catch (e) {
             console.error("recognition.start failed:", e);
-            recognition = null;
+            enableTapToTalk("start-failed");
+            if (recognition === rec) recognition = null;
             scheduleListen(1500);
         }
     }
@@ -1132,6 +1183,9 @@
             unlockAudioForMobile();
         }
 
+        awaitingReply = true;
+        showTalkButton(false);
+        stopListening();
         setStatus(isGreeting ? "Здороваюсь..." : "Думаю...");
         hideReplayButton();
 
@@ -1269,6 +1323,7 @@
     document.getElementById("start-btn").addEventListener("click", enterApp);
     document.getElementById("submit-feedback-btn").addEventListener("click", submitPilotFeedback);
     document.getElementById("play-reply-btn").addEventListener("click", playReplyManually);
+    document.getElementById("talk-btn").addEventListener("click", onTalkButton);
     document.getElementById("text-send-btn").addEventListener("click", sendTextMessage);
     document.getElementById("text-input").addEventListener("keydown", function(e) {
         if (e.key === "Enter" && !e.shiftKey) {

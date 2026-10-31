@@ -120,18 +120,18 @@ def _check_google_tts() -> dict:
             chirp = [v for v in voices if "Chirp3" in v][:3]
             return {
                 "ok": True,
-                "key_prefix": api_key[:10] + "...",
+                "key_set": bool(api_key),
                 "voice_count": len(voices),
                 "chirp3_sample": chirp,
             }
         return {
             "ok": False,
-            "key_prefix": api_key[:10] + "...",
+            "key_set": bool(api_key),
             "http_status": resp.status_code,
             "google_error": _parse_google_error(resp),
         }
     except Exception as e:
-        return {"ok": False, "key_prefix": api_key[:10] + "...", "reason": str(e)}
+        return {"ok": False, "key_set": bool(api_key), "reason": str(e)}
 
 
 def _read_prompt(relative_path: str) -> str:
@@ -365,7 +365,7 @@ def tts():
     print("TTS endpoint called")
     print("Text for TTS:", text[:60])
     print("Language:", language)
-    print("Key prefix:", api_key[:10] + "...")
+    print("TTS key set:", bool(api_key))
 
     url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={api_key}"
     last_detail = None
