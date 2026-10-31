@@ -11,6 +11,7 @@ from pathlib import Path
 load_dotenv()
 
 import pilot_tracking as pilot
+import budget_guard as budget
 
 app = Flask(__name__)
 CORS(app)
@@ -305,6 +306,16 @@ def chat():
     if not user_message:
         return jsonify({"reply": "Я не услышала тебя. Попробуй ещё раз."}), 400
 
+    if len(str(user_message)) > budget.MAX_USER_MESSAGE_CHARS:
+        user_message = str(user_message)[:budget.MAX_USER_MESSAGE_CHARS]
+
+    # Защита бюджета: проверяем лимиты ДО обращения к платному ИИ.
+    ip = budget.client_ip(request)
+    allowed, why = budget.try_consume_reply(user_id, ip)
+    if not allowed:
+        print(f"BUDGET LIMIT ({why})")
+        return jsonify({"reply": budget.limit_message(language), "limit": True}), 429
+
     system_prompt = build_system_prompt(
         user_name,
         user_age,
@@ -329,6 +340,7 @@ def chat():
         )
 
         reply = strip_emojis(response.content[0].text)
+        budget.allow_tts_for(reply)
         history.append({"role": "assistant", "content": reply})
         trim_history(user_id)
 
@@ -336,8 +348,14 @@ def chat():
 
     except Exception as e:
         history.pop()
+        budget.refund_reply(user_id, ip)
         print(f"Ошибка Claude API: {e}")
         return jsonify({"reply": "Что-то пошло не так. Попробуй сказать ещё раз."}), 500
+
+
+@app.route("/budget/status", methods=["GET"])
+def budget_status():
+    return jsonify(budget.status())
 
 
 @app.route("/tts/check", methods=["GET"])
@@ -354,6 +372,12 @@ def tts():
 
     if not text:
         return jsonify({"error": "Нет текста"}), 400
+
+    # Защита бюджета: озвучиваем только ответы, выданные сервером, и в пределах лимита.
+    allowed, why = budget.try_consume_tts(text)
+    if not allowed:
+        print(f"TTS BUDGET BLOCK ({why})")
+        return jsonify({"error": "limit", "reason": why}), 429
 
     api_key = _google_api_key()
     if not api_key:

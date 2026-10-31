@@ -1254,6 +1254,13 @@
                 body: JSON.stringify(payload)
             });
 
+            if (response.status === 429) {
+                const lim = await response.json().catch(function() { return {}; });
+                awaitingReply = false;
+                showReply(lim.reply || "На сегодня лимит бесплатного тестирования исчерпан. Возвращайтесь завтра.");
+                stopDialog(lim.reply || "На сегодня лимит бесплатного тестирования исчерпан. Возвращайтесь завтра.");
+                return;
+            }
             if (!response.ok) throw new Error("Сервер не ответил");
 
             const data = await response.json();
