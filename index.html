@@ -1,10 +1,40 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" id="main-html">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MetaPelet</title>
+    <title>MetaPelet — Тёплый голосовой собеседник для пожилых</title>
+    <meta name="description" content="MetaPelet — тёплый голосовой собеседник для пожилых на русском, иврите и английском. Не медицинская услуга. Бесплатное тестирование.">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://www.metapelet.org/">
+    <meta property="og:title" content="MetaPelet — голосовой собеседник для пожилых">
+    <meta property="og:description" content="Тёплый разговор на родном языке: русский, иврит, английский. Бесплатное тестирование.">
+    <meta property="og:image" content="https://www.metapelet.org/static/og-image.jpg">
+    
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://www.metapelet.org/">
+    <meta name="twitter:title" content="MetaPelet — голосовой собеседник для пожилых">
+    <meta name="twitter:description" content="Тёплый разговор на родном языке: русский, иврит, английский. Бесплатное тестирование.">
+    <meta name="twitter:image" content="https://www.metapelet.org/static/og-image.jpg">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <link rel="canonical" href="https://www.metapelet.org/">
+    
+    <!-- Language alternates -->
+    <link rel="alternate" hreflang="ru" href="https://www.metapelet.org/">
+    <link rel="alternate" hreflang="he" href="https://www.metapelet.org/">
+    <link rel="alternate" hreflang="en" href="https://www.metapelet.org/">
+    <link rel="alternate" hreflang="x-default" href="https://www.metapelet.org/">
+    
     <style>
+        * {
+            box-sizing: border-box;
+        }
+        
         body {
             background: linear-gradient(165deg, #fff9ef 0%, #f5f7fa 45%, #eef5f0 100%);
             font-family: "Segoe UI", Arial, sans-serif;
@@ -13,6 +43,20 @@
             padding: 0;
             color: #333;
             min-height: 100vh;
+        }
+        
+        /* RTL support for Hebrew */
+        [dir="rtl"] {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        [dir="rtl"] .hero-steps {
+            text-align: right;
+        }
+        
+        [dir="rtl"] .card {
+            text-align: right;
         }
 
         .screen-hidden {
@@ -386,24 +430,230 @@
             color: white;
             cursor: pointer;
         }
+        
+        .lang-switcher {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 8px;
+            z-index: 100;
+        }
+        
+        [dir="rtl"] .lang-switcher {
+            right: auto;
+            left: 20px;
+        }
+        
+        .lang-btn {
+            padding: 8px 14px;
+            border: 2px solid #ddd;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: #555;
+            transition: all 0.2s;
+        }
+        
+        .lang-btn:hover {
+            border-color: #43a047;
+            background: white;
+        }
+        
+        .lang-btn.active {
+            background: #43a047;
+            color: white;
+            border-color: #43a047;
+        }
+        
+        .contact-section {
+            max-width: 520px;
+            margin: 32px auto 0;
+            padding: 24px;
+            background: rgba(255, 255, 255, 0.85);
+            border-radius: 16px;
+            text-align: center;
+        }
+        
+        .contact-section h3 {
+            margin: 0 0 16px;
+            font-size: 1.3rem;
+            color: #2d3436;
+        }
+        
+        .contact-section p {
+            margin: 0 0 16px;
+            color: #555;
+            line-height: 1.5;
+        }
+        
+        .contact-links {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .contact-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            text-decoration: none;
+            color: #43a047;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .contact-link:hover {
+            border-color: #43a047;
+            background: #f0f7f0;
+        }
+        
+        .footer-links {
+            max-width: 520px;
+            margin: 24px auto 0;
+            padding: 16px;
+            font-size: 0.95rem;
+        }
+        
+        .footer-links a {
+            color: #43a047;
+            text-decoration: none;
+            margin: 0 8px;
+        }
+        
+        .footer-links a:hover {
+            text-decoration: underline;
+        }
+        
+        .disclaimer-text {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 16px;
+            font-style: italic;
+        }
+        
+        /* Hide/show language-specific content */
+        [data-lang-content] {
+            display: none;
+        }
+        
+        [data-lang-content].active {
+            display: block;
+        }
+        
+        [data-lang-content].active.inline {
+            display: inline;
+        }
+        
+        @media (max-width: 640px) {
+            .lang-switcher {
+                top: 12px;
+                right: 12px;
+                flex-direction: column;
+                gap: 6px;
+            }
+            
+            [dir="rtl"] .lang-switcher {
+                left: 12px;
+            }
+            
+            .lang-btn {
+                padding: 6px 12px;
+                font-size: 0.85rem;
+            }
+            
+            .contact-links {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
 <body>
 
 <section id="landing-screen">
+    <div class="lang-switcher">
+        <button class="lang-btn active" data-lang="ru">РУ</button>
+        <button class="lang-btn" data-lang="he">עב</button>
+        <button class="lang-btn" data-lang="en">EN</button>
+    </div>
+    
     <div class="hero">
         <div class="brand-badge">
             <div class="logo-mark" aria-hidden="true">M</div>
             <div class="logo-text">MetaPelet</div>
         </div>
-        <h1>Тёплый голосовой собеседник рядом с вами</h1>
-        <p class="hero-lead">Поговорите — MetaPelet слушает, поддерживает и отвечает спокойным живым голосом.</p>
-        <ol class="hero-steps">
-            <li>Нажмите «Поговорить»</li>
-            <li>Заполните короткую анкету</li>
-            <li>Говорите — MetaPelet ответит сама</li>
-        </ol>
-        <button type="button" id="start-btn" class="primary-btn">Поговорить</button>
+        
+        <!-- Russian -->
+        <div data-lang-content="ru" class="active">
+            <h1>Тёплый голосовой собеседник для пожилых людей</h1>
+            <p class="hero-lead">MetaPelet слушает, поддерживает и отвечает спокойным живым голосом на русском, иврите или английском. Для эмоциональной поддержки, не медицинская услуга.</p>
+            <ol class="hero-steps">
+                <li>Нажмите «Попробовать бесплатно»</li>
+                <li>Заполните короткую анкету (имя, возраст, язык, интересы)</li>
+                <li>Говорите — MetaPelet ответит тёплым голосом</li>
+            </ol>
+            <button type="button" class="primary-btn start-btn-lang">Попробовать бесплатно</button>
+            <p class="disclaimer-text">Это не медицинская услуга. MetaPelet не даёт медицинских советов.</p>
+        </div>
+        
+        <!-- Hebrew -->
+        <div data-lang-content="he">
+            <h1>בן שיח קולי וחם למבוגרים</h1>
+            <p class="hero-lead">MetaPelet מקשיב, תומך ועונה בקול חי ורגוע ברוסית, עברית או אנגלית. לתמיכה רגשית, לא שירות רפואי.</p>
+            <ol class="hero-steps">
+                <li>לחצו "נסו בחינם"</li>
+                <li>מלאו שאלון קצר (שם, גיל, שפה, תחומי עניין)</li>
+                <li>דברו — MetaPelet יענה בקול חם</li>
+            </ol>
+            <button type="button" class="primary-btn start-btn-lang">נסו בחינם</button>
+            <p class="disclaimer-text">זה לא שירות רפואי. MetaPelet לא נותן ייעוץ רפואי.</p>
+        </div>
+        
+        <!-- English -->
+        <div data-lang-content="en">
+            <h1>A warm voice companion for elderly people</h1>
+            <p class="hero-lead">MetaPelet listens, supports, and responds with a calm, natural voice in Russian, Hebrew, or English. For emotional support, not a medical service.</p>
+            <ol class="hero-steps">
+                <li>Click "Try for free"</li>
+                <li>Fill out a short questionnaire (name, age, language, interests)</li>
+                <li>Speak — MetaPelet will respond with a warm voice</li>
+            </ol>
+            <button type="button" class="primary-btn start-btn-lang">Try for free</button>
+            <p class="disclaimer-text">This is not a medical service. MetaPelet does not provide medical advice.</p>
+        </div>
+        
+        <!-- Contact Section -->
+        <div class="contact-section">
+            <h3 data-lang-content="ru" class="active">Контакты</h3>
+            <h3 data-lang-content="he">יצירת קשר</h3>
+            <h3 data-lang-content="en">Contact</h3>
+            
+            <p data-lang-content="ru" class="active">Вопросы, отзывы или предложения о сотрудничестве:</p>
+            <p data-lang-content="he">שאלות, משוב או הצעות לשיתוף פעולה:</p>
+            <p data-lang-content="en">Questions, feedback, or collaboration inquiries:</p>
+            
+            <div class="contact-links">
+                <a href="https://github.com/Kristina130276/metapelet-app" target="_blank" class="contact-link" rel="noopener">
+                    <span>GitHub</span>
+                </a>
+                <a href="https://youtu.be/s1BDsZ6yT0E" target="_blank" class="contact-link" rel="noopener">
+                    <span>📹 Demo Video</span>
+                </a>
+            </div>
+        </div>
+        
+        <div class="footer-links">
+            <a href="/privacy" data-lang-content="ru" class="active">Политика конфиденциальности</a>
+            <a href="/privacy" data-lang-content="he">מדיניות פרטיות</a>
+            <a href="/privacy" data-lang-content="en">Privacy Policy</a>
+        </div>
     </div>
 </section>
 
@@ -1371,8 +1621,67 @@
         }
     }
 
+    // Language switching
+    const mainHtml = document.getElementById('main-html');
+    const langBtns = document.querySelectorAll('.lang-btn');
+    const langContents = document.querySelectorAll('[data-lang-content]');
+    const startBtns = document.querySelectorAll('.start-btn-lang');
+    
+    function setUILanguage(lang) {
+        // Update buttons
+        langBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.lang === lang);
+        });
+        
+        // Update content visibility
+        langContents.forEach(content => {
+            const isActive = content.dataset.langContent === lang;
+            content.classList.toggle('active', isActive);
+        });
+        
+        // Update HTML attributes
+        const langMap = { ru: 'ru', he: 'he', en: 'en' };
+        const dirMap = { ru: 'ltr', he: 'rtl', en: 'ltr' };
+        mainHtml.setAttribute('lang', langMap[lang]);
+        mainHtml.setAttribute('dir', dirMap[lang]);
+        document.body.setAttribute('dir', dirMap[lang]);
+        
+        // Update title and meta
+        const titles = {
+            ru: 'MetaPelet — Тёплый голосовой собеседник для пожилых',
+            he: 'MetaPelet — בן שיח קולי וחם למבוגרים',
+            en: 'MetaPelet — A warm voice companion for elderly people'
+        };
+        document.title = titles[lang];
+        
+        // Update meta description
+        const descriptions = {
+            ru: 'MetaPelet — тёплый голосовой собеседник для пожилых на русском, иврите и английском. Не медицинская услуга. Бесплатное тестирование.',
+            he: 'MetaPelet — בן שיח קולי וחם למבוגרים ברוסית, עברית ואנגלית. לא שירות רפואי. ניסיון חינמי.',
+            en: 'MetaPelet — a warm voice companion for elderly people in Russian, Hebrew, and English. Not a medical service. Free trial.'
+        };
+        const metaDesc = document.querySelector('meta[name="description"]');
+        if (metaDesc) metaDesc.setAttribute('content', descriptions[lang]);
+        
+        // Save preference
+        localStorage.setItem('metapelet_ui_lang', lang);
+    }
+    
+    langBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            setUILanguage(btn.dataset.lang);
+        });
+    });
+    
+    startBtns.forEach(btn => {
+        btn.addEventListener('click', enterApp);
+    });
+    
+    // Load saved UI language preference
+    const savedUILang = localStorage.getItem('metapelet_ui_lang') || 'ru';
+    setUILanguage(savedUILang);
+    
     document.getElementById("save-anketa-btn").addEventListener("click", saveAnketa);
-    document.getElementById("start-btn").addEventListener("click", enterApp);
     document.getElementById("submit-feedback-btn").addEventListener("click", submitPilotFeedback);
     document.getElementById("play-reply-btn").addEventListener("click", playReplyManually);
     document.getElementById("talk-btn").addEventListener("click", onTalkButton);
