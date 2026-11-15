@@ -90,10 +90,13 @@
         }
         @media (max-width: 640px) {
             body {
-                padding: 64px 12px 12px;
+                padding: 12px;
+                display: flex;
+                flex-direction: column;
             }
             .container {
                 padding: 24px 20px;
+                order: 1;
             }
             h1 {
                 font-size: 1.6rem;
@@ -102,21 +105,19 @@
                 font-size: 1.3rem;
             }
             .lang-switch {
-                position: fixed;
-                top: 8px;
-                left: 0;
-                right: 0;
-                transform: none;
-                justify-content: center;
+                position: static;
+                display: flex;
                 flex-direction: row;
+                justify-content: center;
+                align-items: center;
                 gap: 6px;
-                z-index: 1000;
-                background: rgba(255, 255, 255, 0.95);
-                padding: 6px 8px;
-                border-radius: 8px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
                 width: 100%;
-                box-sizing: border-box;
+                margin: 12px 0 20px 0;
+                padding: 0;
+                order: 0;
+                direction: ltr;
+                background: transparent;
+                box-shadow: none;
             }
             .lang-btn {
                 padding: 5px 10px;

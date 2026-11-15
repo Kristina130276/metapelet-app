@@ -436,8 +436,10 @@
             top: 20px;
             right: 20px;
             display: flex;
+            flex-direction: row;
             gap: 8px;
             z-index: 100;
+            direction: ltr;
         }
         
         [dir="rtl"] .lang-switcher {
@@ -447,37 +449,38 @@
         
         @media (max-width: 500px) {
             #landing-screen {
-                padding-top: 64px;
+                padding-top: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
             }
             
             .lang-switcher {
-                position: fixed;
-                top: 8px;
-                left: 50%;
-                right: auto;
-                transform: translateX(-50%);
-                justify-content: center;
+                position: static;
+                display: flex;
                 flex-direction: row;
-                flex-wrap: nowrap;
+                justify-content: center;
+                align-items: center;
                 gap: 6px;
-                width: auto;
-                max-width: 90%;
-                margin: 0;
+                width: 100%;
+                margin: 12px 0 20px 0;
                 padding: 0;
-                box-sizing: border-box;
+                order: -1;
+                direction: ltr;
             }
             
             [dir="rtl"] .lang-switcher {
-                left: 50%;
-                right: auto;
-                transform: translateX(-50%);
+                direction: ltr;
+            }
+            
+            .hero {
+                width: 100%;
             }
             
             .lang-btn {
                 padding: 6px 12px;
                 font-size: 0.85rem;
                 min-width: 42px;
-                max-width: 60px;
                 flex: 0 0 auto;
                 display: inline-flex;
                 align-items: center;
@@ -490,7 +493,6 @@
                 padding: 5px 10px;
                 font-size: 0.8rem;
                 min-width: 38px;
-                max-width: 55px;
             }
         }
         
@@ -603,22 +605,6 @@
         }
         
         @media (max-width: 640px) {
-            .lang-switcher {
-                top: 12px;
-                right: 12px;
-                flex-direction: column;
-                gap: 6px;
-            }
-            
-            [dir="rtl"] .lang-switcher {
-                left: 12px;
-            }
-            
-            .lang-btn {
-                padding: 6px 12px;
-                font-size: 0.85rem;
-            }
-            
             .contact-links {
                 flex-direction: column;
             }
