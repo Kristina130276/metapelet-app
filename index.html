@@ -438,7 +438,6 @@
             display: flex;
             gap: 8px;
             z-index: 100;
-            flex-wrap: wrap;
         }
         
         [dir="rtl"] .lang-switcher {
@@ -447,19 +446,51 @@
         }
         
         @media (max-width: 500px) {
-            .lang-switcher {
-                position: relative;
-                top: 0;
-                right: 0;
-                left: 0;
-                justify-content: center;
-                margin-bottom: 20px;
-                order: -1;
+            #landing-screen {
+                padding-top: 64px;
             }
             
-            #landing-screen .hero {
-                display: flex;
-                flex-direction: column;
+            .lang-switcher {
+                position: fixed;
+                top: 8px;
+                left: 50%;
+                right: auto;
+                transform: translateX(-50%);
+                justify-content: center;
+                flex-direction: row;
+                flex-wrap: nowrap;
+                gap: 6px;
+                width: auto;
+                max-width: 90%;
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            [dir="rtl"] .lang-switcher {
+                left: 50%;
+                right: auto;
+                transform: translateX(-50%);
+            }
+            
+            .lang-btn {
+                padding: 6px 12px;
+                font-size: 0.85rem;
+                min-width: 42px;
+                max-width: 60px;
+                flex: 0 0 auto;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+        }
+        
+        @media (max-width: 340px) {
+            .lang-btn {
+                padding: 5px 10px;
+                font-size: 0.8rem;
+                min-width: 38px;
+                max-width: 55px;
             }
         }
         
@@ -473,6 +504,7 @@
             font-weight: 500;
             color: #555;
             transition: all 0.2s;
+            white-space: nowrap;
         }
         
         .lang-btn:hover {

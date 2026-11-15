@@ -73,6 +73,32 @@ def capture_landing_page(url, lang_code, lang_label, width, height, filename):
     finally:
         driver.quit()
 
+def capture_privacy_page(url, lang_code, lang_label, width, height, filename):
+    """Capture privacy page screenshot in specified language."""
+    print(f"Capturing {lang_label} privacy page ({width}x{height})...")
+    driver = setup_driver(width, height)
+    
+    try:
+        # Load privacy page
+        driver.get(url + "/privacy")
+        time.sleep(2)
+        
+        # Find and click the language button
+        if lang_code != 'ru':  # Russian is default
+            wait = WebDriverWait(driver, 10)
+            lang_btn = wait.until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, f'button.lang-btn[data-lang="{lang_code}"]'))
+            )
+            lang_btn.click()
+            time.sleep(2)
+        
+        # Take screenshot
+        driver.save_screenshot(filename)
+        print(f"  ✅ Saved to {filename}")
+        
+    finally:
+        driver.quit()
+
 def main():
     base_url = "http://localhost:5000"
     static_dir = Path("/workspace/static")
@@ -88,19 +114,40 @@ def main():
         return 1
     
     screenshots = [
-        # Landing page
-        ('ru', 'Russian', 1920, 1080, static_dir / "screenshot-desktop-ru.png"),
-        ('he', 'Hebrew', 1920, 1080, static_dir / "screenshot-desktop-he.png"),
-        ('en', 'English', 1920, 1080, static_dir / "screenshot-desktop-en.png"),
-        ('ru', 'Russian', 375, 812, static_dir / "screenshot-mobile-ru.png"),
-        ('he', 'Hebrew', 375, 812, static_dir / "screenshot-mobile-he.png"),
+        # Desktop landing page
+        ('ru', 'Russian', 1920, 1080, static_dir / "screenshot-desktop-ru.png", 'landing'),
+        ('he', 'Hebrew', 1920, 1080, static_dir / "screenshot-desktop-he.png", 'landing'),
+        ('en', 'English', 1920, 1080, static_dir / "screenshot-desktop-en.png", 'landing'),
+        
+        # Mobile landing page at 375px
+        ('ru', 'Russian', 375, 812, static_dir / "screenshot-mobile-ru.png", 'landing'),
+        ('he', 'Hebrew', 375, 812, static_dir / "screenshot-mobile-he.png", 'landing'),
+        ('en', 'English', 375, 812, static_dir / "screenshot-mobile-en.png", 'landing'),
+        
+        # Mobile landing page at 320px (narrow phones)
+        ('ru', 'Russian', 320, 568, static_dir / "screenshot-mobile-320-ru.png", 'landing'),
+        ('he', 'Hebrew', 320, 568, static_dir / "screenshot-mobile-320-he.png", 'landing'),
+        
+        # Privacy page mobile
+        ('he', 'Hebrew', 375, 812, static_dir / "screenshot-privacy-mobile-he.png", 'privacy'),
     ]
     
-    for lang_code, lang_label, width, height, filename in screenshots:
+    for item in screenshots:
+        if len(item) == 6:
+            lang_code, lang_label, width, height, filename, page_type = item
+        else:
+            lang_code, lang_label, width, height, filename = item
+            page_type = 'landing'
+            
         try:
-            capture_landing_page(base_url, lang_code, lang_label, width, height, str(filename))
+            if page_type == 'privacy':
+                capture_privacy_page(base_url, lang_code, lang_label, width, height, str(filename))
+            else:
+                capture_landing_page(base_url, lang_code, lang_label, width, height, str(filename))
         except Exception as e:
             print(f"  ❌ Failed: {e}")
+            import traceback
+            traceback.print_exc()
             return 1
     
     print("\n✅ All screenshots captured successfully!")
