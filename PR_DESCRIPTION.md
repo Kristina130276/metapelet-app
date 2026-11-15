@@ -198,14 +198,29 @@ OK
 
 ## 📸 Screenshots
 
+All screenshots captured with proper language switching and verified RTL layout for Hebrew.
+
 ### Desktop - Russian (Default)
 ![Desktop Russian](static/screenshot-desktop-ru.png)
 
-### Desktop - Hebrew (RTL)
+### Desktop - Hebrew (RTL Verified ✅)
 ![Desktop Hebrew](static/screenshot-desktop-he.png)
+
+### Desktop - English
+![Desktop English](static/screenshot-desktop-en.png)
 
 ### Mobile - Russian
 ![Mobile Russian](static/screenshot-mobile-ru.png)
+
+### Mobile - Hebrew (RTL Verified ✅)
+![Mobile Hebrew](static/screenshot-mobile-he.png)
+
+**Language switching verified:**
+- ✅ Click עב button → Hebrew content + RTL layout
+- ✅ Click EN button → English content
+- ✅ Click РУ button → Russian content  
+- ✅ Language preference saved to localStorage
+- ✅ Mobile layout: language buttons positioned below logo (no overlap)
 
 ---
 
