@@ -4,3 +4,5 @@ __pycache__/
 _test_google_tts.py
 data/pilot_events.jsonl
 data/pilot_feedback.jsonl
+
+data/*.sqlite3*

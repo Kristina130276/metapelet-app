@@ -14,9 +14,10 @@ import pilot_tracking as pilot
 import budget_guard as budget
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 CORS(app)
 
-client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"), timeout=20.0, max_retries=0)
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 PROFILE_FILES = {
@@ -215,6 +216,31 @@ def trim_history(user_id: str):
 
 
 @app.before_request
+def validate_public_input():
+    if request.path not in ("/chat", "/tts") or request.method != "POST":
+        return None
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
+    limits = {"message": 1000, "user_id": 100, "name": 100,
+              "interests": 1000, "avoid_topics": 1000, "profile_id": 40,
+              "language": 10, "text": 1200}
+    for key, limit in limits.items():
+        value = data.get(key)
+        if value is not None and (not isinstance(value, str) or len(value) > limit):
+            return jsonify({"error": "Invalid field", "field": key}), 400
+    if data.get("language") not in (None, "", "ru-RU", "he-IL", "en-US"):
+        return jsonify({"error": "Unsupported language"}), 400
+    age = data.get("age")
+    if age not in (None, ""):
+        if isinstance(age, bool) or not str(age).isdigit() or not 18 <= int(age) <= 120:
+            return jsonify({"error": "Invalid age"}), 400
+    required = "message" if request.path == "/chat" else "text"
+    if not isinstance(data.get(required), str) or not data[required].strip():
+        return jsonify({"error": "Text required"}), 400
+
+
+@app.before_request
 def canonical_host():
     host = (request.host or "").split(":")[0].lower()
     if host == "metapelet.org":
@@ -384,7 +410,7 @@ def chat():
     except Exception as e:
         history.pop()
         budget.refund_reply(user_id, ip)
-        print(f"Ошибка Claude API: {e}")
+        print("Claude API request failed")
         return jsonify({"reply": "Что-то пошло не так. Попробуй сказать ещё раз."}), 500
 
 
@@ -467,7 +493,7 @@ def tts():
     return jsonify({
         "error": "Google TTS недоступен на сервере",
         "hint": "Проверьте GOOGLE_API_KEY в Render и Cloud Text-to-Speech API",
-        "detail": last_detail,
+        
     }), 500
 
 

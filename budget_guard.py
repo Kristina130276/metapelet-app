@@ -6,9 +6,6 @@
 import hashlib
 import os
 import re
-import threading
-import time
-from collections import OrderedDict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -29,25 +26,33 @@ LIMIT_MESSAGES = {
     "en": "Today's free testing limit has been reached. Thank you for talking with MetaPelet! Please come back tomorrow.",
 }
 
-_lock = threading.Lock()
-_day = None
-_global = 0
-_tts_calls = 0
-_per_user = {}
-_per_ip = {}
-_allowed_tts = OrderedDict()   # хэш текста ответа -> оставшиеся воспроизведения
+# Must point to a persistent mounted volume on Render. Local SQLite survives
+# process restarts, but an ephemeral filesystem does NOT survive deployments.
+import sqlite3
+from pathlib import Path
+
+DB_PATH = Path(os.environ.get("BUDGET_DB_PATH", "data/budget.sqlite3"))
 
 
 def _today():
     return datetime.now(TZ).strftime("%Y-%m-%d")
 
 
-def _roll_day():
-    global _day, _global, _tts_calls, _per_user, _per_ip
-    d = _today()
-    if d != _day:
-        _day, _global, _tts_calls = d, 0, 0
-        _per_user, _per_ip = {}, {}
+def _db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(str(DB_PATH), timeout=5, isolation_level=None)
+    db.execute("CREATE TABLE IF NOT EXISTS counters (day TEXT, scope TEXT, used INTEGER NOT NULL, PRIMARY KEY(day, scope))")
+    db.execute("CREATE TABLE IF NOT EXISTS permits (hash TEXT PRIMARY KEY, remaining INTEGER NOT NULL, day TEXT)")
+    return db
+
+
+def _used(db, day, scope):
+    row = db.execute("SELECT used FROM counters WHERE day=? AND scope=?", (day, scope)).fetchone()
+    return row[0] if row else 0
+
+
+def _bump(db, day, scope):
+    db.execute("INSERT INTO counters VALUES (?, ?, 1) ON CONFLICT(day, scope) DO UPDATE SET used=used+1", (day, scope))
 
 
 def client_ip(request):
@@ -69,33 +74,36 @@ def limit_message(language):
 
 
 def try_consume_reply(user_id, ip):
-    """True, если можно сделать ещё один ответ ИИ; сразу резервирует его."""
-    with _lock:
-        _roll_day()
-        global _global
-        uid = (user_id or "default")[:100]
-        if _global >= DAILY_GLOBAL_REPLIES:
-            return False, "global"
-        if _per_user.get(uid, 0) >= DAILY_PER_USER_REPLIES:
-            return False, "user"
-        if _per_ip.get(ip, 0) >= DAILY_PER_IP_REPLIES:
-            return False, "ip"
-        _global += 1
-        _per_user[uid] = _per_user.get(uid, 0) + 1
-        _per_ip[ip] = _per_ip.get(ip, 0) + 1
+    db = None
+    try:
+        db = _db()
+        db.execute("BEGIN IMMEDIATE")
+        day = _today()
+        scopes = [("reply", DAILY_GLOBAL_REPLIES, "global"),
+                  ("user:" + _h((user_id or "default")[:100]), DAILY_PER_USER_REPLIES, "user"),
+                  ("ip:" + _h(ip), DAILY_PER_IP_REPLIES, "ip")]
+        for scope, limit, reason in scopes:
+            if _used(db, day, scope) >= limit:
+                db.rollback()
+                return False, reason
+        for scope, _, _ in scopes:
+            _bump(db, day, scope)
+        db.execute("DELETE FROM counters WHERE day < ?", (day,))
+        db.commit()
         return True, None
+    except (sqlite3.Error, OSError):
+        if db is not None:
+            db.rollback()
+        return False, "storage_unavailable"
+    finally:
+        if db is not None:
+            db.close()
 
 
 def refund_reply(user_id, ip):
-    """Ответ не получился (ошибка ИИ) — не засчитываем."""
-    with _lock:
-        global _global
-        uid = (user_id or "default")[:100]
-        _global = max(0, _global - 1)
-        if _per_user.get(uid):
-            _per_user[uid] -= 1
-        if _per_ip.get(ip):
-            _per_ip[ip] -= 1
+    # A timeout/error does not establish that the provider did not bill the call.
+    # Keep the reservation: fail conservatively instead of allowing free retries.
+    return None
 
 
 def _norm(text):
@@ -107,11 +115,22 @@ def _h(text):
 
 
 def allow_tts_for(text):
-    """Озвучивать можно только тексты, которые выдал сам сервер."""
-    with _lock:
-        _allowed_tts[_h(text)] = TTS_PLAYS_PER_REPLY
-        while len(_allowed_tts) > 2000:
-            _allowed_tts.popitem(last=False)
+    db = None
+    try:
+        db = _db()
+        day = _today()
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("DELETE FROM permits WHERE day <> ?", (day,))
+        db.execute("INSERT OR REPLACE INTO permits VALUES (?, ?, ?)", (_h(text), TTS_PLAYS_PER_REPLY, day))
+        db.commit()
+        return True
+    except (sqlite3.Error, OSError):
+        if db is not None:
+            db.rollback()
+        return False
+    finally:
+        if db is not None:
+            db.close()
 
 
 STATIC_TTS_OK = {
@@ -122,26 +141,44 @@ STATIC_TTS_OK = {
 
 
 def try_consume_tts(text):
-    with _lock:
-        _roll_day()
-        global _tts_calls
-        if len(text or "") > MAX_TTS_CHARS:
-            return False, "too_long"
-        if _tts_calls >= DAILY_TTS_CALLS:
+    if len(text or "") > MAX_TTS_CHARS:
+        return False, "too_long"
+    db = None
+    try:
+        db = _db()
+        db.execute("BEGIN IMMEDIATE")
+        day = _today()
+        if _used(db, day, "tts") >= DAILY_TTS_CALLS:
+            db.rollback()
             return False, "global"
-        key = _h(text)
-        if _norm(text) in STATIC_TTS_OK:
-            pass
-        elif _allowed_tts.get(key, 0) > 0:
-            _allowed_tts[key] -= 1
-        else:
-            return False, "unknown_text"
-        _tts_calls += 1
+        if _norm(text) not in STATIC_TTS_OK:
+            row = db.execute("SELECT remaining FROM permits WHERE hash=? AND day=?", (_h(text), day)).fetchone()
+            if not row or row[0] <= 0:
+                db.rollback()
+                return False, "unknown_text"
+            db.execute("UPDATE permits SET remaining=remaining-1 WHERE hash=?", (_h(text),))
+        _bump(db, day, "tts")
+        db.commit()
         return True, None
+    except (sqlite3.Error, OSError):
+        if db is not None:
+            db.rollback()
+        return False, "storage_unavailable"
+    finally:
+        if db is not None:
+            db.close()
 
 
 def status():
-    with _lock:
-        _roll_day()
-        return {"day": _day, "replies_used": _global, "replies_limit": DAILY_GLOBAL_REPLIES,
-                "tts_used": _tts_calls, "tts_limit": DAILY_TTS_CALLS}
+    db = None
+    try:
+        db = _db()
+        day = _today()
+        return {"day": day, "replies_used": _used(db, day, "reply"),
+                "replies_limit": DAILY_GLOBAL_REPLIES, "tts_used": _used(db, day, "tts"),
+                "tts_limit": DAILY_TTS_CALLS}
+    except (sqlite3.Error, OSError):
+        return {"error": "storage_unavailable"}
+    finally:
+        if db is not None:
+            db.close()
