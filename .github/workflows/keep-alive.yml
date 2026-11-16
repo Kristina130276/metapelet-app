@@ -1,0 +1,30 @@
+name: Keep Render Service Alive
+
+on:
+  schedule:
+    # Run every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          echo "Pinging https://www.metapelet.org/health"
+          # Try up to 3 times with 10 second timeout each
+          for i in 1 2 3; do
+            if curl -f -s -m 10 https://www.metapelet.org/health > /dev/null; then
+              echo "✅ Health check succeeded on attempt $i"
+              exit 0
+            else
+              echo "⚠️  Health check failed on attempt $i"
+              if [ $i -lt 3 ]; then
+                echo "Retrying in 5 seconds..."
+                sleep 5
+              fi
+            fi
+          done
+          echo "❌ Health check failed after 3 attempts"
+          exit 1

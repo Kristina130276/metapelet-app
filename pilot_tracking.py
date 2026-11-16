@@ -1,18 +1,11 @@
-"""Anonymous pilot funnel + feedback (5-family YouTube pilot). No PII.
+"""Anonymous pilot funnel + feedback. No PII.
 
-WARNING: On Render free tier, data written to the local filesystem is EPHEMERAL.
-Files in the 'data/' directory will be LOST on:
-  - Server restart
-  - New deployment
-  - Platform maintenance
+Storage modes:
+  1. DATABASE_URL set: Uses PostgreSQL (Neon, Supabase, etc.)
+  2. No DATABASE_URL: Falls back to local JSONL files (ephemeral on Render free tier)
 
-For production, pilot data should be persisted to:
-  - External database (e.g., PostgreSQL)
-  - Cloud storage (e.g., Google Sheets via API, S3)
-  - External logging service
-
-Current implementation writes to local disk for simplicity during early pilot.
-Data loss is expected and acceptable for this phase.
+WARNING: On Render free tier, data written to local files is EPHEMERAL and LOST on restart.
+For production pilots, set DATABASE_URL to a persistent PostgreSQL database.
 """
 
 from __future__ import annotations
@@ -21,10 +14,25 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
+import logging
+
+# Try to import psycopg2, but don't fail if it's not available
+try:
+    import psycopg2
+    import psycopg2.extras
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(os.environ.get("PILOT_DATA_DIR", "data"))
 EVENTS_PATH = DATA_DIR / "pilot_events.jsonl"
 FEEDBACK_PATH = DATA_DIR / "pilot_feedback.jsonl"
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+USE_DATABASE = bool(DATABASE_URL and PSYCOPG2_AVAILABLE)
 
 VALID_EVENTS = frozenset({
     "site_visit",
@@ -37,6 +45,92 @@ VALID_EVENTS = frozenset({
 FEEDBACK_COMFORT = frozenset({"yes", "partial", "no"})
 FEEDBACK_LIKED = frozenset({"yes", "partial", "no"})
 FEEDBACK_CONTINUE = frozenset({"yes", "maybe", "no"})
+
+# Database connection pool (created on first use)
+_db_connection: Optional[object] = None
+
+
+def _get_db_connection():
+    """Get or create database connection."""
+    global _db_connection
+    if not USE_DATABASE:
+        return None
+    if _db_connection is None:
+        try:
+            _db_connection = psycopg2.connect(DATABASE_URL)
+            _db_connection.autocommit = True
+            logger.info("Database connection established")
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            return None
+    return _db_connection
+
+
+def init_database():
+    """Initialize database tables if DATABASE_URL is set."""
+    if not USE_DATABASE:
+        return
+    
+    conn = _get_db_connection()
+    if not conn:
+        return
+    
+    try:
+        with conn.cursor() as cur:
+            # Create events table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS pilot_events (
+                    id SERIAL PRIMARY KEY,
+                    ts TIMESTAMP WITH TIME ZONE NOT NULL,
+                    session_id VARCHAR(80) NOT NULL,
+                    event VARCHAR(50) NOT NULL,
+                    utm_source VARCHAR(80),
+                    utm_campaign VARCHAR(80),
+                    utm_content VARCHAR(80),
+                    meta JSONB,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """)
+            
+            # Create feedback table (no name, age, or phone - only anonymous data)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS pilot_feedback (
+                    id SERIAL PRIMARY KEY,
+                    ts TIMESTAMP WITH TIME ZONE NOT NULL,
+                    session_id VARCHAR(80) NOT NULL,
+                    comfortable VARCHAR(20) NOT NULL,
+                    liked VARCHAR(20) NOT NULL,
+                    continue_pilot VARCHAR(20) NOT NULL,
+                    issues TEXT,
+                    language VARCHAR(20),
+                    utm_source VARCHAR(80),
+                    utm_campaign VARCHAR(80),
+                    utm_content VARCHAR(80),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """)
+            
+            # Create indexes for better query performance
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_events_session 
+                ON pilot_events(session_id)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_events_ts 
+                ON pilot_events(ts)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_feedback_session 
+                ON pilot_feedback(session_id)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_feedback_ts 
+                ON pilot_feedback(ts)
+            """)
+            
+            logger.info("Database tables initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database tables: {e}")
 
 
 def _now_iso() -> str:
@@ -68,6 +162,73 @@ def _read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
+def _read_events_from_db() -> list[dict]:
+    """Read all events from database."""
+    conn = _get_db_connection()
+    if not conn:
+        return []
+    
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT ts, session_id, event, utm_source, utm_campaign, 
+                       utm_content, meta
+                FROM pilot_events
+                ORDER BY ts
+            """)
+            rows = cur.fetchall()
+            # Convert to dict and parse meta JSON
+            result = []
+            for row in rows:
+                row_dict = dict(row)
+                row_dict['ts'] = row_dict['ts'].isoformat() if row_dict['ts'] else ""
+                if isinstance(row_dict.get('meta'), str):
+                    try:
+                        row_dict['meta'] = json.loads(row_dict['meta'])
+                    except:
+                        row_dict['meta'] = {}
+                result.append(row_dict)
+            return result
+    except Exception as e:
+        logger.error(f"Failed to read events from database: {e}")
+        return []
+
+
+def _read_feedback_from_db() -> list[dict]:
+    """Read all feedback from database."""
+    conn = _get_db_connection()
+    if not conn:
+        return []
+    
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT ts, session_id, comfortable, liked, continue_pilot, 
+                       issues, language, utm_source, utm_campaign, utm_content
+                FROM pilot_feedback
+                ORDER BY ts
+            """)
+            rows = cur.fetchall()
+            # Convert to dict
+            result = []
+            for row in rows:
+                row_dict = dict(row)
+                row_dict['ts'] = row_dict['ts'].isoformat() if row_dict['ts'] else ""
+                result.append(row_dict)
+            return result
+    except Exception as e:
+        logger.error(f"Failed to read feedback from database: {e}")
+        return []
+
+
+def get_all_feedback_for_export() -> list[dict]:
+    """Get all feedback records for CSV export."""
+    if USE_DATABASE:
+        return _read_feedback_from_db()
+    else:
+        return _read_jsonl(FEEDBACK_PATH)
+
+
 def admin_token_ok(token: str | None) -> bool:
     expected = (os.environ.get("PILOT_ADMIN_TOKEN") or "").strip()
     if not expected:
@@ -93,17 +254,43 @@ def record_event(
         for key, val in meta.items():
             if key in ("language",) and isinstance(val, str) and len(val) <= 20:
                 safe_meta[key] = val
-    row = {
-        "ts": _now_iso(),
-        "session_id": sid,
-        "event": event,
-        "utm_source": (utm_source or "")[:80],
-        "utm_campaign": (utm_campaign or "")[:80],
-        "utm_content": (utm_content or "")[:80],
-        "meta": safe_meta,
-    }
-    _append_jsonl(EVENTS_PATH, row)
-    return True, ""
+    
+    ts = _now_iso()
+    
+    if USE_DATABASE:
+        # Store in database
+        conn = _get_db_connection()
+        if conn:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO pilot_events 
+                        (ts, session_id, event, utm_source, utm_campaign, utm_content, meta)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        ts, sid, event,
+                        (utm_source or "")[:80],
+                        (utm_campaign or "")[:80],
+                        (utm_content or "")[:80],
+                        json.dumps(safe_meta) if safe_meta else None
+                    ))
+                return True, ""
+            except Exception as e:
+                logger.error(f"Failed to record event to database: {e}")
+                return False, "database_error"
+    else:
+        # Fallback to file storage
+        row = {
+            "ts": ts,
+            "session_id": sid,
+            "event": event,
+            "utm_source": (utm_source or "")[:80],
+            "utm_campaign": (utm_campaign or "")[:80],
+            "utm_content": (utm_content or "")[:80],
+            "meta": safe_meta,
+        }
+        _append_jsonl(EVENTS_PATH, row)
+        return True, ""
 
 
 def record_feedback(
@@ -112,6 +299,7 @@ def record_feedback(
     liked: str,
     continue_pilot: str,
     issues: str = "",
+    language: str = "",
     utm_source: str = "",
     utm_campaign: str = "",
     utm_content: str = "",
@@ -125,24 +313,58 @@ def record_feedback(
         return False, "invalid_liked"
     if continue_pilot not in FEEDBACK_CONTINUE:
         return False, "invalid_continue"
-    row = {
-        "ts": _now_iso(),
-        "session_id": sid,
-        "comfortable": comfortable,
-        "liked": liked,
-        "continue_pilot": continue_pilot,
-        "issues": (issues or "").strip()[:2000],
-        "utm_source": (utm_source or "")[:80],
-        "utm_campaign": (utm_campaign or "")[:80],
-        "utm_content": (utm_content or "")[:80],
-    }
-    _append_jsonl(FEEDBACK_PATH, row)
-    return True, ""
+    
+    ts = _now_iso()
+    issues_text = (issues or "").strip()[:2000]
+    lang = (language or "")[:20]
+    
+    if USE_DATABASE:
+        # Store in database
+        conn = _get_db_connection()
+        if conn:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO pilot_feedback 
+                        (ts, session_id, comfortable, liked, continue_pilot, issues, 
+                         language, utm_source, utm_campaign, utm_content)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        ts, sid, comfortable, liked, continue_pilot, issues_text,
+                        lang,
+                        (utm_source or "")[:80],
+                        (utm_campaign or "")[:80],
+                        (utm_content or "")[:80]
+                    ))
+                return True, ""
+            except Exception as e:
+                logger.error(f"Failed to record feedback to database: {e}")
+                return False, "database_error"
+    else:
+        # Fallback to file storage
+        row = {
+            "ts": ts,
+            "session_id": sid,
+            "comfortable": comfortable,
+            "liked": liked,
+            "continue_pilot": continue_pilot,
+            "issues": issues_text,
+            "language": lang,
+            "utm_source": (utm_source or "")[:80],
+            "utm_campaign": (utm_campaign or "")[:80],
+            "utm_content": (utm_content or "")[:80],
+        }
+        _append_jsonl(FEEDBACK_PATH, row)
+        return True, ""
 
 
 def build_summary() -> dict:
-    events = _read_jsonl(EVENTS_PATH)
-    feedback = _read_jsonl(FEEDBACK_PATH)
+    if USE_DATABASE:
+        events = _read_events_from_db()
+        feedback = _read_feedback_from_db()
+    else:
+        events = _read_jsonl(EVENTS_PATH)
+        feedback = _read_jsonl(FEEDBACK_PATH)
 
     sessions: dict[str, dict] = {}
 

@@ -16,6 +16,9 @@ import budget_guard as budget
 app = Flask(__name__)
 CORS(app)
 
+# Initialize database tables if DATABASE_URL is set
+pilot.init_database()
+
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
@@ -284,6 +287,7 @@ def pilot_feedback():
         liked=data.get("liked", ""),
         continue_pilot=data.get("continue_pilot", ""),
         issues=data.get("issues", ""),
+        language=data.get("language", ""),
         utm_source=data.get("utm_source", ""),
         utm_campaign=data.get("utm_campaign", ""),
         utm_content=data.get("utm_content", ""),
@@ -304,6 +308,51 @@ def pilot_summary():
     return Response(
         pilot.summary_html(summary),
         mimetype="text/html; charset=utf-8",
+    )
+
+
+@app.route("/admin/feedback.csv", methods=["GET"])
+def admin_feedback_csv():
+    """Export all feedback as CSV. Protected by ADMIN_TOKEN env var."""
+    admin_token = os.environ.get("ADMIN_TOKEN", "").strip()
+    if not admin_token:
+        return "Endpoint disabled. Set ADMIN_TOKEN environment variable.", 404
+    
+    # Check token from query parameter or Authorization header
+    provided_token = request.args.get("token", "")
+    if not provided_token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            provided_token = auth_header[7:]
+    
+    if provided_token.strip() != admin_token:
+        return "Unauthorized. Invalid or missing token.", 403
+    
+    # Get all feedback
+    feedback_rows = pilot.get_all_feedback_for_export()
+    
+    # Generate CSV
+    import csv
+    import io
+    
+    output = io.StringIO()
+    if feedback_rows:
+        fieldnames = ["ts", "session_id", "comfortable", "liked", "continue_pilot", 
+                     "issues", "language", "utm_source", "utm_campaign", "utm_content"]
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in feedback_rows:
+            # Only write the fields we want (no id, created_at, etc.)
+            filtered_row = {k: row.get(k, "") for k in fieldnames}
+            writer.writerow(filtered_row)
+    else:
+        output.write("# No feedback data available\n")
+    
+    csv_content = output.getvalue()
+    return Response(
+        csv_content,
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=metapelet-feedback.csv"}
     )
 
 
