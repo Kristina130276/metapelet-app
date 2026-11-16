@@ -226,6 +226,39 @@ def home():
     return send_file("index.html")
 
 
+@app.route("/privacy")
+def privacy():
+    return send_file("privacy.html")
+
+
+@app.route("/robots.txt")
+def robots():
+    return Response(
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Sitemap: https://www.metapelet.org/sitemap.xml\n",
+        mimetype="text/plain"
+    )
+
+
+@app.route("/sitemap.xml")
+def sitemap():
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://www.metapelet.org/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://www.metapelet.org/privacy</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>"""
+    return Response(xml, mimetype="application/xml")
+
+
 @app.route("/pilot/event", methods=["POST"])
 def pilot_event():
     data = request.json or {}
@@ -276,11 +309,13 @@ def pilot_summary():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    data = request.json
+    data = request.json or {}
     user_message = data.get("message")
     user_id  = data.get("user_id", "default")
     user_name = data.get("name", "").strip() or "дорогой человек"
-    user_age  = data.get("age", "").strip() if data.get("age") else ""
+    # Handle age as string or number robustly
+    user_age_raw = data.get("age")
+    user_age = str(user_age_raw).strip() if user_age_raw not in (None, "") else ""
     profile_id = data.get("profile_id") or None
     language = (data.get("language") or "ru-RU").strip() or "ru-RU"
     interests = (data.get("interests") or "").strip()
@@ -297,9 +332,9 @@ def chat():
             f"Только на {lang_label} языке. Без эмодзи."
         )
 
+    # Log without PII (no name, no age)
     print(
-        f"USER: {user_name} | AGE: {user_age or '—'} | ID: {user_id}"
-        f" | PROFILE: {profile_id or '—'} | LANG: {language}"
+        f"CHAT | ID: {user_id} | PROFILE: {profile_id or '—'} | LANG: {language}"
         f" | GREETING: {is_greeting}"
     )
 
@@ -358,6 +393,12 @@ def budget_status():
     return jsonify(budget.status())
 
 
+@app.route("/health", methods=["GET"])
+def health():
+    """Lightweight health check endpoint for uptime monitoring."""
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route("/tts/check", methods=["GET"])
 def tts_check():
     """Диагностика: включён ли TTS для GOOGLE_API_KEY на Render."""
@@ -386,10 +427,8 @@ def tts():
     voice_cfg = _tts_voice_for_language(language)
     voice_names = voice_cfg.get("names") or [voice_cfg.get("name", "ru-RU-Wavenet-A")]
 
-    print("TTS endpoint called")
-    print("Text for TTS:", text[:60])
-    print("Language:", language)
-    print("TTS key set:", bool(api_key))
+    # Log without conversation content
+    print(f"TTS | LANG: {language} | LENGTH: {len(text)} chars")
 
     url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={api_key}"
     last_detail = None

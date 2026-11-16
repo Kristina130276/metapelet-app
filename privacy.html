@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ru" id="privacy-html">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Политика конфиденциальности — MetaPelet</title>
+    <meta name="robots" content="index, follow">
+    <link rel="icon" href="/static/favicon.png">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f9f9f9;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        h1 { 
+            color: #2d3436; 
+            margin-bottom: 8px;
+            font-size: 2rem;
+        }
+        h2 { 
+            color: #43a047; 
+            margin-top: 32px;
+            font-size: 1.5rem;
+        }
+        .lang-switch {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+        .lang-btn {
+            padding: 8px 16px;
+            border: 2px solid #ddd;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .lang-btn:hover {
+            border-color: #43a047;
+        }
+        .lang-btn.active {
+            background: #43a047;
+            color: white;
+            border-color: #43a047;
+        }
+        .content {
+            display: none;
+        }
+        .content.active {
+            display: block;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 32px;
+            color: #43a047;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .disclaimer {
+            background: #fff9ef;
+            border-left: 4px solid #f4b942;
+            padding: 16px;
+            margin: 24px 0;
+            border-radius: 4px;
+        }
+        /* RTL support for Hebrew */
+        [dir="rtl"] {
+            direction: rtl;
+            text-align: right;
+        }
+        [dir="rtl"] .disclaimer {
+            border-left: none;
+            border-right: 4px solid #f4b942;
+        }
+        @media (max-width: 640px) {
+            body {
+                padding: 12px;
+                display: flex;
+                flex-direction: column;
+            }
+            .container {
+                padding: 24px 20px;
+                order: 1;
+            }
+            h1 {
+                font-size: 1.6rem;
+            }
+            h2 {
+                font-size: 1.3rem;
+            }
+            .lang-switch {
+                position: static;
+                display: flex;
+                flex-direction: row;
+                justify-content: center;
+                align-items: center;
+                gap: 6px;
+                width: 100%;
+                margin: 12px 0 20px 0;
+                padding: 0;
+                order: 0;
+                direction: ltr;
+                background: transparent;
+                box-shadow: none;
+            }
+            .lang-btn {
+                padding: 5px 10px;
+                font-size: 0.8rem;
+                min-width: 36px;
+                flex: 0 0 auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="lang-switch">
+            <button class="lang-btn active" data-lang="ru">Русский</button>
+            <button class="lang-btn" data-lang="he">עברית</button>
+            <button class="lang-btn" data-lang="en">English</button>
+        </div>
+
+        <div class="content active" data-lang-content="ru">
+            <h1>Политика конфиденциальности</h1>
+            <p><strong>Последнее обновление:</strong> 15 ноября 2026 г.</p>
+
+            <div class="disclaimer">
+                <strong>Важно:</strong> MetaPelet — это не медицинская услуга. Мы не предоставляем медицинские консультации, диагностику или лечение. MetaPelet предназначен только для эмоциональной поддержки и общения.
+            </div>
+
+            <h2>Какие данные мы собираем</h2>
+            <p>Когда вы используете MetaPelet, мы собираем:</p>
+            <ul>
+                <li><strong>Имя и возраст:</strong> вы предоставляете их при заполнении анкеты, чтобы MetaPelet мог обращаться к вам по имени и подстраивать стиль общения.</li>
+                <li><strong>Язык общения:</strong> русский, иврит или английский.</li>
+                <li><strong>Интересы и темы для избегания:</strong> чтобы сделать разговор более персонализированным.</li>
+                <li><strong>Текст ваших сообщений:</strong> всё, что вы говорите или пишете в разговоре.</li>
+                <li><strong>Технические данные:</strong> идентификатор пользователя (сгенерированный случайным образом), IP-адрес для защиты бюджета, данные о посещении сайта (анонимно).</li>
+            </ul>
+
+            <h2>Как мы используем ваши данные</h2>
+            <p>Мы используем собранные данные для:</p>
+            <ul>
+                <li>Ведения диалога с вами через искусственный интеллект (Anthropic Claude).</li>
+                <li>Озвучивания ответов (Google Cloud Text-to-Speech).</li>
+                <li>Защиты бесплатного тестирования от злоупотреблений (ограничение запросов по пользователю и IP).</li>
+                <li>Улучшения сервиса на основе анонимных отзывов.</li>
+            </ul>
+
+            <h2>С кем мы делимся данными</h2>
+            <p>Ваши данные передаются:</p>
+            <ul>
+                <li><strong>Anthropic (США):</strong> ваши сообщения и анкета отправляются в Claude API для генерации ответов. <a href="https://www.anthropic.com/legal/privacy" target="_blank">Политика конфиденциальности Anthropic</a>.</li>
+                <li><strong>Google Cloud (США):</strong> текст ответов отправляется в Google Text-to-Speech API для озвучивания. <a href="https://cloud.google.com/terms/cloud-privacy-notice" target="_blank">Политика конфиденциальности Google Cloud</a>.</li>
+            </ul>
+            <p>Мы <strong>не продаём</strong> ваши данные третьим лицам.</p>
+
+            <h2>Как долго хранятся данные</h2>
+            <ul>
+                <li><strong>История диалога:</strong> хранится в оперативной памяти сервера (до 10 последних сообщений) и удаляется при перезапуске сервера или через несколько часов бездействия.</li>
+                <li><strong>События и отзывы пилота:</strong> хранятся анонимно (без имени и возраста) на сервере в файлах данных. Эти данные <strong>могут быть потеряны</strong> при обновлении сервера на бесплатном хостинге Render, так как используется временное хранилище.</li>
+                <li><strong>Логи сервера:</strong> хранятся автоматически платформой Render в течение ограниченного времени. Мы больше не записываем в логи имя и возраст.</li>
+            </ul>
+
+            <h2>Ваши права</h2>
+            <p>Вы имеете право:</p>
+            <ul>
+                <li><strong>Удалить историю разговора:</strong> очистите кеш браузера (localStorage) или используйте режим инкогнито.</li>
+                <li><strong>Запросить удаление данных пилота:</strong> свяжитесь с нами (см. ниже).</li>
+                <li><strong>Не давать разрешение на микрофон:</strong> без разрешения микрофона голосовой разговор не будет работать.</li>
+            </ul>
+
+            <h2>Безопасность</h2>
+            <p>Мы используем HTTPS для защиты передачи данных. Однако обратите внимание:</p>
+            <ul>
+                <li>Это <strong>бесплатный пилот</strong> на бесплатном хостинге без гарантий доступности.</li>
+                <li>Данные не зашифрованы на сервере (временное хранилище).</li>
+                <li>Не делитесь медицинской или конфиденциальной информацией в разговоре.</li>
+            </ul>
+
+            <h2>Дети</h2>
+            <p>MetaPelet предназначен для взрослых. Мы не собираем намеренно данные от детей младше 18 лет.</p>
+
+            <h2>Изменения в политике</h2>
+            <p>Мы можем обновлять эту политику. Дата последнего обновления указана вверху страницы.</p>
+
+            <h2>Контакты</h2>
+            <p>Если у вас есть вопросы о конфиденциальности или вы хотите удалить свои данные, пожалуйста:</p>
+            <ul>
+                <li>Откройте главную страницу и используйте раздел «Контакты»</li>
+                <li>Или свяжитесь через GitHub: <a href="https://github.com/Kristina130276/metapelet-app" target="_blank">github.com/Kristina130276/metapelet-app</a></li>
+            </ul>
+
+            <a href="/" class="back-link">← Вернуться на главную</a>
+        </div>
+
+        <div class="content" data-lang-content="he">
+            <h1>מדיניות פרטיות</h1>
+            <p><strong>עדכון אחרון:</strong> 15 בנובמבר 2026</p>
+
+            <div class="disclaimer">
+                <strong>חשוב:</strong> MetaPelet אינו שירות רפואי. אנחנו לא מספקים ייעוץ רפואי, אבחון או טיפול. MetaPelet מיועד לתמיכה רגשית ושיחה בלבד.
+            </div>
+
+            <h2>אילו נתונים אנחנו אוספים</h2>
+            <p>כאשר אתם משתמשים ב-MetaPelet, אנחנו אוספים:</p>
+            <ul>
+                <li><strong>שם וגיל:</strong> אתם מספקים אותם בשאלון כדי ש-MetaPelet יוכל לפנות אליכם בשם ולהתאים את סגנון השיחה.</li>
+                <li><strong>שפת השיחה:</strong> רוסית, עברית או אנגלית.</li>
+                <li><strong>תחומי עניין ונושאים להימנע מהם:</strong> כדי להפוך את השיחה לאישית יותר.</li>
+                <li><strong>טקסט ההודעות שלכם:</strong> כל מה שאתם אומרים או כותבים בשיחה.</li>
+                <li><strong>נתונים טכניים:</strong> מזהה משתמש (נוצר באקראי), כתובת IP להגנת תקציב, נתוני ביקור באתר (אנונימי).</li>
+            </ul>
+
+            <h2>כיצד אנחנו משתמשים בנתונים שלכם</h2>
+            <p>אנחנו משתמשים בנתונים שנאספו עבור:</p>
+            <ul>
+                <li>ניהול דיאלוג איתכם באמצעות בינה מלאכותית (Anthropic Claude).</li>
+                <li>הקראת תשובות (Google Cloud Text-to-Speech).</li>
+                <li>הגנה על הניסיון החינמי מפני שימוש לרעה (הגבלת בקשות לפי משתמש ו-IP).</li>
+                <li>שיפור השירות על בסיס משוב אנונימי.</li>
+            </ul>
+
+            <h2>עם מי אנחנו משתפים נתונים</h2>
+            <p>הנתונים שלכם מועברים ל:</p>
+            <ul>
+                <li><strong>Anthropic (ארה״ב):</strong> ההודעות והשאלון שלכם נשלחים ל-Claude API ליצירת תשובות. <a href="https://www.anthropic.com/legal/privacy" target="_blank">מדיניות הפרטיות של Anthropic</a>.</li>
+                <li><strong>Google Cloud (ארה״ב):</strong> טקסט התשובות נשלח ל-Google Text-to-Speech API להקראה. <a href="https://cloud.google.com/terms/cloud-privacy-notice" target="_blank">מדיניות הפרטיות של Google Cloud</a>.</li>
+            </ul>
+            <p>אנחנו <strong>לא מוכרים</strong> את הנתונים שלכם לצדדים שלישיים.</p>
+
+            <h2>כמה זמן נתונים נשמרים</h2>
+            <ul>
+                <li><strong>היסטוריית דיאלוג:</strong> נשמרת בזיכרון השרת (עד 10 הודעות אחרונות) ונמחקת בעת הפעלה מחדש של השרת או לאחר מספר שעות של חוסר פעילות.</li>
+                <li><strong>אירועים ומשוב פיילוט:</strong> נשמרים באופן אנונימי (ללא שם וגיל) על השרת בקבצי נתונים. נתונים אלה <strong>עלולים ללכת לאיבוד</strong> בעדכון שרת באחסון החינמי של Render, כיוון שנעשה שימוש באחסון זמני.</li>
+                <li><strong>לוגים של השרת:</strong> נשמרים אוטומטית על ידי פלטפורמת Render לפרק זמן מוגבל. אנחנו כבר לא רושמים שם וגיל בלוגים.</li>
+            </ul>
+
+            <h2>הזכויות שלכם</h2>
+            <p>יש לכם זכות:</p>
+            <ul>
+                <li><strong>למחוק היסטוריית שיחה:</strong> נקו את המטמון של הדפדפן (localStorage) או השתמשו במצב גלישה פרטית.</li>
+                <li><strong>לבקש מחיקת נתוני פיילוט:</strong> צרו קשר איתנו (ראו להלן).</li>
+                <li><strong>לא לתת הרשאה למיקרופון:</strong> בלי הרשאת מיקרופון, שיחה קולית לא תפעל.</li>
+            </ul>
+
+            <h2>אבטחה</h2>
+            <p>אנחנו משתמשים ב-HTTPS להגנה על העברת נתונים. אבל שימו לב:</p>
+            <ul>
+                <li>זהו <strong>פיילוט חינמי</strong> על אחסון חינמי ללא ضمانات זמינות.</li>
+                <li>נתונים אינם מוצפנים על השרת (אחסון זמני).</li>
+                <li>אל תשתפו מידע רפואי או סודי בשיחה.</li>
+            </ul>
+
+            <h2>ילדים</h2>
+            <p>MetaPelet מיועד למבוגרים. אנחנו לא אוספים במכוון נתונים מילדים מתחת לגיל 18.</p>
+
+            <h2>שינויים במדיניות</h2>
+            <p>אנחנו עשויים לעדכן מדיניות זו. תאריך העדכון האחרון מופיע בראש הדף.</p>
+
+            <h2>יצירת קשר</h2>
+            <p>אם יש לכם שאלות לגבי פרטיות או שאתם רוצים למחוק את הנתונים שלכם, אנא:</p>
+            <ul>
+                <li>פתחו את הדף הראשי והשתמשו בסעיף "יצירת קשר"</li>
+                <li>או צרו קשר דרך GitHub: <a href="https://github.com/Kristina130276/metapelet-app" target="_blank">github.com/Kristina130276/metapelet-app</a></li>
+            </ul>
+
+            <a href="/" class="back-link">→ חזרה לדף הראשי</a>
+        </div>
+
+        <div class="content" data-lang-content="en">
+            <h1>Privacy Policy</h1>
+            <p><strong>Last updated:</strong> November 15, 2026</p>
+
+            <div class="disclaimer">
+                <strong>Important:</strong> MetaPelet is not a medical service. We do not provide medical advice, diagnosis, or treatment. MetaPelet is intended for emotional support and conversation only.
+            </div>
+
+            <h2>What data we collect</h2>
+            <p>When you use MetaPelet, we collect:</p>
+            <ul>
+                <li><strong>Name and age:</strong> you provide these in the questionnaire so MetaPelet can address you by name and adjust the conversation style.</li>
+                <li><strong>Conversation language:</strong> Russian, Hebrew, or English.</li>
+                <li><strong>Interests and topics to avoid:</strong> to make the conversation more personalized.</li>
+                <li><strong>Text of your messages:</strong> everything you say or write in the conversation.</li>
+                <li><strong>Technical data:</strong> user ID (randomly generated), IP address for budget protection, site visit data (anonymous).</li>
+            </ul>
+
+            <h2>How we use your data</h2>
+            <p>We use the collected data to:</p>
+            <ul>
+                <li>Conduct dialogue with you using artificial intelligence (Anthropic Claude).</li>
+                <li>Voice the responses (Google Cloud Text-to-Speech).</li>
+                <li>Protect the free trial from abuse (request limits per user and IP).</li>
+                <li>Improve the service based on anonymous feedback.</li>
+            </ul>
+
+            <h2>Who we share data with</h2>
+            <p>Your data is transmitted to:</p>
+            <ul>
+                <li><strong>Anthropic (USA):</strong> your messages and questionnaire are sent to the Claude API to generate responses. <a href="https://www.anthropic.com/legal/privacy" target="_blank">Anthropic Privacy Policy</a>.</li>
+                <li><strong>Google Cloud (USA):</strong> response text is sent to the Google Text-to-Speech API for voicing. <a href="https://cloud.google.com/terms/cloud-privacy-notice" target="_blank">Google Cloud Privacy Policy</a>.</li>
+            </ul>
+            <p>We <strong>do not sell</strong> your data to third parties.</p>
+
+            <h2>How long data is stored</h2>
+            <ul>
+                <li><strong>Dialogue history:</strong> stored in server memory (up to 10 recent messages) and deleted on server restart or after several hours of inactivity.</li>
+                <li><strong>Pilot events and feedback:</strong> stored anonymously (without name and age) on the server in data files. This data <strong>may be lost</strong> during server updates on Render's free hosting, as temporary storage is used.</li>
+                <li><strong>Server logs:</strong> automatically stored by the Render platform for a limited time. We no longer log name and age.</li>
+            </ul>
+
+            <h2>Your rights</h2>
+            <p>You have the right to:</p>
+            <ul>
+                <li><strong>Delete conversation history:</strong> clear browser cache (localStorage) or use incognito mode.</li>
+                <li><strong>Request deletion of pilot data:</strong> contact us (see below).</li>
+                <li><strong>Not grant microphone permission:</strong> without microphone permission, voice conversation will not work.</li>
+            </ul>
+
+            <h2>Security</h2>
+            <p>We use HTTPS to protect data transmission. However, please note:</p>
+            <ul>
+                <li>This is a <strong>free pilot</strong> on free hosting without availability guarantees.</li>
+                <li>Data is not encrypted on the server (temporary storage).</li>
+                <li>Do not share medical or confidential information in conversation.</li>
+            </ul>
+
+            <h2>Children</h2>
+            <p>MetaPelet is intended for adults. We do not knowingly collect data from children under 18.</p>
+
+            <h2>Changes to policy</h2>
+            <p>We may update this policy. The last update date is shown at the top of the page.</p>
+
+            <h2>Contact</h2>
+            <p>If you have questions about privacy or want to delete your data, please:</p>
+            <ul>
+                <li>Open the main page and use the "Contact" section</li>
+                <li>Or contact via GitHub: <a href="https://github.com/Kristina130276/metapelet-app" target="_blank">github.com/Kristina130276/metapelet-app</a></li>
+            </ul>
+
+            <a href="/" class="back-link">← Back to home</a>
+        </div>
+    </div>
+
+    <script>
+        const html = document.getElementById('privacy-html');
+        const langBtns = document.querySelectorAll('.lang-btn');
+        const contents = document.querySelectorAll('.content');
+
+        function setLanguage(lang) {
+            // Update buttons
+            langBtns.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.lang === lang);
+            });
+            
+            // Update content
+            contents.forEach(content => {
+                content.classList.toggle('active', content.dataset.langContent === lang);
+            });
+            
+            // Update HTML attributes
+            const langMap = { ru: 'ru', he: 'he', en: 'en' };
+            const dirMap = { ru: 'ltr', he: 'rtl', en: 'ltr' };
+            html.setAttribute('lang', langMap[lang]);
+            html.setAttribute('dir', dirMap[lang]);
+            document.body.setAttribute('dir', dirMap[lang]);
+            
+            // Update title
+            const titles = {
+                ru: 'Политика конфиденциальности — MetaPelet',
+                he: 'מדיניות פרטיות — MetaPelet',
+                en: 'Privacy Policy — MetaPelet'
+            };
+            document.title = titles[lang];
+            
+            // Save preference
+            localStorage.setItem('metapelet_privacy_lang', lang);
+        }
+
+        langBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                setLanguage(btn.dataset.lang);
+            });
+        });
+
+        // Load saved preference or detect from main page
+        const savedLang = localStorage.getItem('metapelet_privacy_lang') ||
+                          localStorage.getItem('metapelet_ui_lang') ||
+                          'ru';
+        setLanguage(savedLang);
+    </script>
+</body>
+</html>

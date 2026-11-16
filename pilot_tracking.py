@@ -1,4 +1,19 @@
-"""Anonymous pilot funnel + feedback (5-family YouTube pilot). No PII."""
+"""Anonymous pilot funnel + feedback (5-family YouTube pilot). No PII.
+
+WARNING: On Render free tier, data written to the local filesystem is EPHEMERAL.
+Files in the 'data/' directory will be LOST on:
+  - Server restart
+  - New deployment
+  - Platform maintenance
+
+For production, pilot data should be persisted to:
+  - External database (e.g., PostgreSQL)
+  - Cloud storage (e.g., Google Sheets via API, S3)
+  - External logging service
+
+Current implementation writes to local disk for simplicity during early pilot.
+Data loss is expected and acceptable for this phase.
+"""
 
 from __future__ import annotations
 
