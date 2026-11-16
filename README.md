@@ -45,6 +45,25 @@ python app.py
 
 Продакшн-запуск: `gunicorn app:app` (см. `render.yaml`).
 
+## Постоянное хранение данных пилота
+
+По умолчанию отзывы записываются в локальные файлы (ephemeral на Render). Для production настройте:
+
+1. **DATABASE_URL** — PostgreSQL connection string (Neon, Supabase, etc.)
+2. **ADMIN_TOKEN** — секретный токен для скачивания отзывов
+
+Без `DATABASE_URL` система автоматически работает с файлами. При наличии `DATABASE_URL` все данные сохраняются в базу данных.
+
+Экспорт отзывов: `https://www.metapelet.org/admin/feedback.csv?token=YOUR_ADMIN_TOKEN`
+
+Подробная инструкция на русском: [docs/SETUP_RU.md](docs/SETUP_RU.md)
+
+## Автоматический keep-alive (без холодных стартов)
+
+GitHub Actions пингует `/health` каждые 10 минут, чтобы Render free tier не засыпал. Workflow: `.github/workflows/keep-alive.yml`
+
+**Важно:** Render free tier даёт 750 часов в месяц **на аккаунт**. Если у вас несколько бесплатных веб-сервисов, часы делятся между ними. Эта настройка работает только если `metapelet-app` — единственный бесплатный сервис на вашем Render аккаунте.
+
 ## Приватность
 
 Репозиторий не должен содержать реальных персональных данных участников тестирования. Профили в `prompts/` — только обезличенные примеры.
