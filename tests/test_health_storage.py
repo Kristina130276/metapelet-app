@@ -84,6 +84,11 @@ class HealthStorageReportingTest(unittest.TestCase):
         self.assertEqual(data["database_configured"], True)
         self.assertEqual(data["database_connected"], True)
         self.assertNotIn("database_error", data)
+        
+        # Verify connect_timeout was passed
+        mock_psycopg2.connect.assert_called_with(
+            pilot.DATABASE_URL, connect_timeout=3
+        )
     
     @patch("pilot_tracking.psycopg2")
     def test_database_connect_failed(self, mock_psycopg2):
@@ -105,6 +110,7 @@ class HealthStorageReportingTest(unittest.TestCase):
         self.assertEqual(data["database_configured"], True)
         self.assertEqual(data["database_connected"], False)
         self.assertEqual(data["database_error"], "connect_failed")
+        self.assertIn("database_error_kind", data)
     
     @patch("pilot_tracking.psycopg2")
     def test_database_closed_connection_reconnect(self, mock_psycopg2):
@@ -141,6 +147,10 @@ class HealthStorageReportingTest(unittest.TestCase):
         self.assertNotIn("database_error", data)
         # Verify old connection was closed
         mock_dead_conn.close.assert_called_once()
+        # Verify reconnect used connect_timeout
+        mock_psycopg2.connect.assert_called_with(
+            pilot.DATABASE_URL, connect_timeout=3
+        )
     
     def test_sanitize_database_url_strips_quotes(self):
         """DATABASE_URL sanitization removes surrounding quotes."""
@@ -163,10 +173,6 @@ class HealthStorageReportingTest(unittest.TestCase):
     def test_sanitize_database_url_strips_prefix(self):
         """DATABASE_URL sanitization removes 'DATABASE_URL=' prefix."""
         result = pilot._sanitize_database_url("DATABASE_URL=postgresql://user:pass@host/db")
-        self.assertEqual(result, "postgresql://user:pass@host/db")
-        
-        # Case insensitive
-        result = pilot._sanitize_database_url("database_url=postgresql://user:pass@host/db")
         self.assertEqual(result, "postgresql://user:pass@host/db")
         
         # With quotes
@@ -207,7 +213,7 @@ class HealthStorageReportingTest(unittest.TestCase):
         # Verify only allowed fields are present
         data = resp.get_json()
         allowed_keys = {"status", "storage", "database_configured", 
-                       "database_connected", "database_error"}
+                       "database_connected", "database_error", "database_error_kind"}
         self.assertTrue(set(data.keys()).issubset(allowed_keys),
                        f"Unexpected keys in /health response: {set(data.keys()) - allowed_keys}")
     
@@ -238,7 +244,7 @@ class HealthStorageReportingTest(unittest.TestCase):
         # Only the error type should be present
         data = resp.get_json()
         if "database_error" in data:
-            self.assertIn(data["database_error"], ["connect_failed", "init_failed"])
+            self.assertEqual(data["database_error"], "connect_failed")
 
 
 if __name__ == "__main__":

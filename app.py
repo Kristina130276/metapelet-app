@@ -11,6 +11,8 @@ import logging
 
 load_dotenv()
 
+logging.basicConfig(level=logging.INFO)
+
 import pilot_tracking as pilot
 import budget_guard as budget
 

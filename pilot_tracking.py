@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -32,17 +33,103 @@ EVENTS_PATH = DATA_DIR / "pilot_events.jsonl"
 FEEDBACK_PATH = DATA_DIR / "pilot_feedback.jsonl"
 
 
-def _sanitize_database_url(raw_url: str) -> str:
-    """Sanitize DATABASE_URL: strip whitespace, quotes, and 'DATABASE_URL=' prefix."""
-    url = raw_url.strip()
-    # Remove 'DATABASE_URL=' prefix first (case-insensitive)
-    if url.lower().startswith("database_url="):
-        url = url[13:]
-    # Remove surrounding single or double quotes
-    url = url.strip()
-    if len(url) >= 2 and url[0] in ('"', "'") and url[-1] == url[0]:
-        url = url[1:-1]
-    return url.strip()
+def _sanitize_database_url(raw_value: str) -> str:
+    """Extract and normalize PostgreSQL URL from potentially messy input.
+    
+    Handles cases where users paste multi-line Neon .env blocks or psql snippets
+    into the DATABASE_URL env var. Never logs or returns the URL in exceptions.
+    
+    Args:
+        raw_value: Raw DATABASE_URL value from environment
+        
+    Returns:
+        Clean PostgreSQL URL or empty string if none found
+    """
+    if not raw_value:
+        return ""
+    
+    # Search for all postgres URLs in the raw value
+    # Matches postgres:// or postgresql:// up to whitespace or quote
+    url_pattern = r'(postgres(?:ql)?://[^\s\'"]+)'
+    matches = re.findall(url_pattern, raw_value)
+    
+    if not matches:
+        # No URL found, fall back to original behavior (strip whitespace)
+        return raw_value.strip()
+    
+    # If multiple URLs found, prefer the one from DATABASE_URL= line
+    selected_url = None
+    for line in raw_value.split('\n'):
+        line_stripped = line.strip()
+        if line_stripped.startswith('DATABASE_URL='):
+            # Extract value after = and strip quotes
+            value = line_stripped[len('DATABASE_URL='):].strip()
+            value = value.strip('\'"')
+            # Find URL in this line
+            line_matches = re.findall(url_pattern, value)
+            if line_matches:
+                selected_url = line_matches[0]
+                break
+    
+    # If no DATABASE_URL= line, use first URL found (skip DATABASE_URL_UNPOOLED if possible)
+    if not selected_url:
+        for line in raw_value.split('\n'):
+            if 'DATABASE_URL_UNPOOLED' in line:
+                continue
+            line_matches = re.findall(url_pattern, line)
+            if line_matches:
+                selected_url = line_matches[0]
+                break
+        
+        # If still nothing, use first match (even if it's UNPOOLED)
+        if not selected_url:
+            selected_url = matches[0]
+    
+    # Strip any trailing quotes
+    selected_url = selected_url.strip('\'"')
+    
+    # Normalize postgres:// to postgresql://
+    if selected_url.startswith('postgres://'):
+        selected_url = 'postgresql://' + selected_url[len('postgres://'):]
+    
+    # Add sslmode=require for neon.tech if not present
+    if 'neon.tech' in selected_url and 'sslmode=' not in selected_url:
+        separator = '&' if '?' in selected_url else '?'
+        selected_url = selected_url + separator + 'sslmode=require'
+    
+    return selected_url
+
+
+def _classify_db_error(error: Exception) -> str:
+    """Classify database connection error into safe category.
+    
+    Returns one of: 'invalid_dsn', 'auth_failed', 'timeout', 'host_not_found', 'ssl', 'other'
+    Never returns exception text to avoid leaking secrets.
+    """
+    error_str = str(error).lower()
+    error_type = type(error).__name__
+    
+    # ProgrammingError usually means DSN parsing failed
+    if error_type == 'ProgrammingError' or 'invalid dsn' in error_str or 'parse' in error_str:
+        return 'invalid_dsn'
+    
+    # Authentication errors
+    if 'password authentication failed' in error_str or 'auth' in error_str:
+        return 'auth_failed'
+    
+    # Timeout errors
+    if 'timeout' in error_str or error_type in ('TimeoutError', 'ConnectTimeout'):
+        return 'timeout'
+    
+    # Host resolution errors
+    if 'could not translate host name' in error_str or 'name or service not known' in error_str:
+        return 'host_not_found'
+    
+    # SSL errors
+    if 'ssl' in error_str or 'certificate' in error_str:
+        return 'ssl'
+    
+    return 'other'
 
 
 DATABASE_URL = _sanitize_database_url(os.environ.get("DATABASE_URL", ""))
@@ -62,22 +149,84 @@ FEEDBACK_CONTINUE = frozenset({"yes", "maybe", "no"})
 
 # Database connection pool (created on first use)
 _db_connection: Optional[object] = None
+_db_connection_error: Optional[Exception] = None
+_db_error_kind: Optional[str] = None
 
 
 def _get_db_connection():
     """Get or create database connection."""
-    global _db_connection
+    global _db_connection, _db_connection_error, _db_error_kind
     if not USE_DATABASE:
         return None
     if _db_connection is None:
         try:
             _db_connection = psycopg2.connect(DATABASE_URL, connect_timeout=3)
             _db_connection.autocommit = True
+            _db_connection_error = None
+            _db_error_kind = None
             logger.info("Database connection established")
         except Exception as e:
-            logger.error(f"Failed to connect to database: connect_failed ({type(e).__name__})")
+            _db_connection_error = e
+            _db_error_kind = _classify_db_error(e)
+            logger.error(f"Failed to connect to database: {type(e).__name__} ({_db_error_kind})")
             return None
     return _db_connection
+
+
+def check_database_health() -> dict:
+    """Check database connection health for /health endpoint.
+    
+    Returns a dict with storage info, never exposing secrets:
+    - storage: "database" or "file"
+    - database_configured: bool (True if DATABASE_URL is set)
+    - database_connected: bool (True if SELECT 1 succeeds)
+    - database_error: "connect_failed" (only on failure)
+    - database_error_kind: categorized error type (only on failure)
+    """
+    result = {
+        "storage": "database" if USE_DATABASE else "file",
+        "database_configured": bool(DATABASE_URL),
+    }
+    
+    if not USE_DATABASE:
+        result["database_connected"] = False
+        return result
+    
+    global _db_connection
+    
+    # Try to check the existing connection first
+    if _db_connection is not None:
+        try:
+            with _db_connection.cursor() as cur:
+                # Set statement timeout to 2 seconds
+                cur.execute("SET statement_timeout = 2000")
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            result["database_connected"] = True
+            return result
+        except Exception:
+            # Connection is dead/closed, try to reconnect once
+            try:
+                _db_connection.close()
+            except Exception:
+                pass
+            _db_connection = None
+    
+    # Try to reconnect
+    try:
+        _db_connection = psycopg2.connect(DATABASE_URL, connect_timeout=3)
+        _db_connection.autocommit = True
+        with _db_connection.cursor() as cur:
+            cur.execute("SET statement_timeout = 2000")
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        result["database_connected"] = True
+    except Exception as e:
+        result["database_connected"] = False
+        result["database_error"] = "connect_failed"
+        result["database_error_kind"] = _classify_db_error(e)
+    
+    return result
 
 
 def init_database():
@@ -144,7 +293,7 @@ def init_database():
             
             logger.info("Database tables initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize database tables: init_failed ({type(e).__name__})")
+        logger.error(f"Failed to initialize database tables: {e}")
 
 
 def _now_iso() -> str:
@@ -292,19 +441,19 @@ def record_event(
             except Exception as e:
                 logger.error(f"Failed to record event to database: {e}")
                 return False, "database_error"
-    else:
-        # Fallback to file storage
-        row = {
-            "ts": ts,
-            "session_id": sid,
-            "event": event,
-            "utm_source": (utm_source or "")[:80],
-            "utm_campaign": (utm_campaign or "")[:80],
-            "utm_content": (utm_content or "")[:80],
-            "meta": safe_meta,
-        }
-        _append_jsonl(EVENTS_PATH, row)
-        return True, ""
+    
+    # Fallback to file storage (either USE_DATABASE is False or connection failed)
+    row = {
+        "ts": ts,
+        "session_id": sid,
+        "event": event,
+        "utm_source": (utm_source or "")[:80],
+        "utm_campaign": (utm_campaign or "")[:80],
+        "utm_content": (utm_content or "")[:80],
+        "meta": safe_meta,
+    }
+    _append_jsonl(EVENTS_PATH, row)
+    return True, ""
 
 
 def record_feedback(
@@ -354,22 +503,22 @@ def record_feedback(
             except Exception as e:
                 logger.error(f"Failed to record feedback to database: {e}")
                 return False, "database_error"
-    else:
-        # Fallback to file storage
-        row = {
-            "ts": ts,
-            "session_id": sid,
-            "comfortable": comfortable,
-            "liked": liked,
-            "continue_pilot": continue_pilot,
-            "issues": issues_text,
-            "language": lang,
-            "utm_source": (utm_source or "")[:80],
-            "utm_campaign": (utm_campaign or "")[:80],
-            "utm_content": (utm_content or "")[:80],
-        }
-        _append_jsonl(FEEDBACK_PATH, row)
-        return True, ""
+    
+    # Fallback to file storage (either USE_DATABASE is False or connection failed)
+    row = {
+        "ts": ts,
+        "session_id": sid,
+        "comfortable": comfortable,
+        "liked": liked,
+        "continue_pilot": continue_pilot,
+        "issues": issues_text,
+        "language": lang,
+        "utm_source": (utm_source or "")[:80],
+        "utm_campaign": (utm_campaign or "")[:80],
+        "utm_content": (utm_content or "")[:80],
+    }
+    _append_jsonl(FEEDBACK_PATH, row)
+    return True, ""
 
 
 def build_summary() -> dict:
@@ -569,57 +718,3 @@ def _escape(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
-
-
-def check_database_health() -> dict:
-    """Check database connection health for /health endpoint.
-    
-    Returns a dict with storage info, never exposing secrets:
-    - storage: "database" or "file"
-    - database_configured: bool (True if DATABASE_URL is set)
-    - database_connected: bool (True if SELECT 1 succeeds)
-    - database_error: "connect_failed" or "init_failed" (only on failure)
-    """
-    result = {
-        "storage": "database" if USE_DATABASE else "file",
-        "database_configured": bool(DATABASE_URL),
-    }
-    
-    if not USE_DATABASE:
-        result["database_connected"] = False
-        return result
-    
-    global _db_connection
-    
-    # Try to check the existing connection first
-    if _db_connection is not None:
-        try:
-            with _db_connection.cursor() as cur:
-                # Set statement timeout to 2 seconds
-                cur.execute("SET statement_timeout = 2000")
-                cur.execute("SELECT 1")
-                cur.fetchone()
-            result["database_connected"] = True
-            return result
-        except Exception:
-            # Connection is dead/closed, try to reconnect once
-            try:
-                _db_connection.close()
-            except Exception:
-                pass
-            _db_connection = None
-    
-    # Try to reconnect
-    try:
-        _db_connection = psycopg2.connect(DATABASE_URL, connect_timeout=3)
-        _db_connection.autocommit = True
-        with _db_connection.cursor() as cur:
-            cur.execute("SET statement_timeout = 2000")
-            cur.execute("SELECT 1")
-            cur.fetchone()
-        result["database_connected"] = True
-    except Exception:
-        result["database_connected"] = False
-        result["database_error"] = "connect_failed"
-    
-    return result
