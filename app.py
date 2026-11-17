@@ -19,6 +19,10 @@ import budget_guard as budget
 app = Flask(__name__)
 CORS(app)
 
+# Configure logging if not already configured
+if not logging.getLogger().hasHandlers():
+    logging.basicConfig(level=logging.INFO)
+
 # Initialize database tables if DATABASE_URL is set
 pilot.init_database()
 
