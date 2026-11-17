@@ -236,6 +236,16 @@ def home():
     return send_file("index.html")
 
 
+@app.route("/setup")
+def setup():
+    return send_file("setup.html")
+
+
+@app.route("/talk")
+def talk():
+    return send_file("talk.html")
+
+
 @app.route("/privacy")
 def privacy():
     return send_file("privacy.html")
@@ -261,12 +271,32 @@ def sitemap():
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://www.metapelet.org/setup</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://www.metapelet.org/talk</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
     <loc>https://www.metapelet.org/privacy</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
 </urlset>"""
     return Response(xml, mimetype="application/xml")
+
+
+@app.route("/static/manifest.json")
+def manifest():
+    return send_file("static/manifest.json", mimetype="application/manifest+json")
+
+
+@app.route("/static/service-worker.js")
+def service_worker():
+    return send_file("static/service-worker.js", mimetype="application/javascript")
 
 
 @app.route("/pilot/event", methods=["POST"])

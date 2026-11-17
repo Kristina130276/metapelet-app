@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="ru" id="talk-html">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=yes">
+    <title>MetaPelet</title>
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="MetaPelet">
+    <meta name="theme-color" content="#43a047">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: linear-gradient(165deg, #fff9ef 0%, #eef5f0 100%);
+            min-height: 100vh;
+            padding: 16px;
+            color: #000;
+            font-size: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        [dir="rtl"] { direction: rtl; text-align: right; }
+        
+        .container {
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .greeting {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #2d3436;
+            margin-bottom: 24px;
+            line-height: 1.3;
+        }
+        
+        .status {
+            font-size: 1.8rem;
+            color: #333;
+            margin-bottom: 32px;
+            min-height: 2.5em;
+            line-height: 1.5;
+            padding: 0 16px;
+        }
+        
+        .btn-talk {
+            width: 100%;
+            font-size: 2.5rem;
+            font-weight: 700;
+            padding: 48px 24px;
+            border-radius: 24px;
+            border: 4px solid #2e7d32;
+            background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 12px 32px rgba(46, 125, 50, 0.35);
+            transition: all 0.2s;
+            margin-bottom: 20px;
+        }
+        
+        .btn-talk:active {
+            transform: scale(0.97);
+        }
+        
+        .btn-stop {
+            background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
+            border-color: #c62828;
+        }
+        
+        .reply-box {
+            background: white;
+            border: 4px solid #43a047;
+            border-radius: 20px;
+            padding: 32px 24px;
+            margin-bottom: 24px;
+            font-size: 1.8rem;
+            line-height: 1.6;
+            color: #000;
+            text-align: center;
+            display: none;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }
+        
+        .reply-box.visible {
+            display: block;
+        }
+        
+        .btn-replay {
+            width: 100%;
+            font-size: 1.6rem;
+            font-weight: 600;
+            padding: 28px 24px;
+            border-radius: 20px;
+            border: 3px solid #555;
+            background: #757575;
+            color: white;
+            cursor: pointer;
+            margin-bottom: 16px;
+            display: none;
+        }
+        
+        .btn-replay.visible {
+            display: block;
+        }
+        
+        .settings-btn {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #ddd;
+            color: #666;
+            font-size: 1.5rem;
+            cursor: pointer;
+            opacity: 0.4;
+            transition: opacity 0.3s;
+            z-index: 100;
+        }
+        
+        [dir="rtl"] .settings-btn {
+            right: auto;
+            left: 12px;
+        }
+        
+        .settings-btn:active {
+            opacity: 1;
+        }
+        
+        .error-message {
+            background: #ffebee;
+            border: 3px solid #e53935;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            font-size: 1.5rem;
+            color: #c62828;
+            line-height: 1.5;
+        }
+        
+        .btn-retry {
+            width: 100%;
+            font-size: 1.8rem;
+            font-weight: 600;
+            padding: 32px 24px;
+            border-radius: 20px;
+            border: 3px solid #1976d2;
+            background: #2196f3;
+            color: white;
+            cursor: pointer;
+            margin-top: 16px;
+        }
+        
+        .hidden { display: none !important; }
+        
+        @media (max-width: 500px) {
+            .greeting { font-size: 2rem; }
+            .status { font-size: 1.5rem; }
+            .btn-talk { font-size: 2rem; padding: 40px 20px; }
+            .reply-box { font-size: 1.5rem; }
+            .btn-replay { font-size: 1.4rem; }
+        }
+    </style>
+</head>
+<body>
+    <button type="button" class="settings-btn" id="settings-btn" title="Настройки">⚙</button>
+    
+    <div class="container">
+        <h1 class="greeting" id="greeting">MetaPelet</h1>
+        
+        <div class="status" id="status"></div>
+        
+        <div id="error-container" class="hidden">
+            <div class="error-message" id="error-message"></div>
+            <button type="button" class="btn-retry" id="retry-btn"></button>
+        </div>
+        
+        <button type="button" class="btn-talk" id="talk-btn"></button>
+        
+        <div class="reply-box" id="reply-box"></div>
+        
+        <button type="button" class="btn-replay" id="replay-btn"></button>
+    </div>
+    
+    <script>
+        const ELDER_PROFILE_KEY = 'metapelet_elder_profile';
+        const GREETING_TRIGGER = '__greeting__';
+        
+        let profile = null;
+        let dialogActive = false;
+        let isSpeaking = false;
+        let awaitingReply = false;
+        let recognition = null;
+        let lastReplyText = '';
+        let lastAudioBlob = null;
+        let lastAudioObjectUrl = null;
+        let userId = null;
+        let mpAudio = null;
+        
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        
+        const texts = {
+            'ru-RU': {
+                noSetup: 'Настройка не завершена',
+                goToSetup: 'Перейти к настройке',
+                greeting: (name) => `Привет, ${name}!`,
+                tapToTalk: 'Поговорить',
+                tapToStop: 'Остановить',
+                listening: 'Слушаю...',
+                thinking: 'Думаю...',
+                speaking: 'Говорю...',
+                micError: 'Микрофон недоступен',
+                micErrorDetail: 'Разрешите доступ к микрофону в настройках браузера',
+                networkError: 'Нет связи с сервером',
+                tryAgain: 'Попробовать снова',
+                notHeard: 'Не слышно?',
+                tapToRepeat: 'Нажмите, чтобы повторить',
+                limitReached: 'На сегодня лимит бесплатного тестирования исчерпан. Возвращайтесь завтра.',
+                unknownError: 'Что-то пошло не так. Попробуйте снова.'
+            },
+            'he-IL': {
+                noSetup: 'ההגדרה לא הושלמה',
+                goToSetup: 'עבור להגדרות',
+                greeting: (name) => `!שלום, ${name}`,
+                tapToTalk: 'לדבר',
+                tapToStop: 'עצור',
+                listening: '...מאזין',
+                thinking: '...חושב',
+                speaking: '...מדבר',
+                micError: 'המיקרופון לא זמין',
+                micErrorDetail: 'אפשר גישה למיקרופון בהגדרות הדפדפן',
+                networkError: 'אין חיבור לשרת',
+                tryAgain: 'נסה שוב',
+                notHeard: '?לא שומע',
+                tapToRepeat: 'לחץ לחזרה',
+                limitReached: '.מכסת הבדיקה החינמית להיום הסתיימה. חזור מחר',
+                unknownError: '.משהו השתבש. נסה שוב'
+            },
+            'en-US': {
+                noSetup: 'Setup not complete',
+                goToSetup: 'Go to setup',
+                greeting: (name) => `Hello, ${name}!`,
+                tapToTalk: 'Talk',
+                tapToStop: 'Stop',
+                listening: 'Listening...',
+                thinking: 'Thinking...',
+                speaking: 'Speaking...',
+                micError: 'Microphone unavailable',
+                micErrorDetail: 'Allow microphone access in browser settings',
+                networkError: 'No connection to server',
+                tryAgain: 'Try again',
+                notHeard: 'Can\'t hear?',
+                tapToRepeat: 'Tap to repeat',
+                limitReached: 'Today\'s free testing limit has been reached. Please come back tomorrow.',
+                unknownError: 'Something went wrong. Try again.'
+            }
+        };
+        
+        function loadProfile() {
+            const data = localStorage.getItem(ELDER_PROFILE_KEY);
+            if (!data) return null;
+            try {
+                return JSON.parse(data);
+            } catch (e) {
+                return null;
+            }
+        }
+        
+        function getUserId() {
+            let id = localStorage.getItem('metapelet_user_id');
+            if (!id) {
+                id = 'elder_' + Math.random().toString(36).slice(2, 10);
+                localStorage.setItem('metapelet_user_id', id);
+            }
+            return id;
+        }
+        
+        function t(key, ...args) {
+            const lang = profile?.language || 'ru-RU';
+            const text = texts[lang]?.[key] || texts['ru-RU'][key];
+            return typeof text === 'function' ? text(...args) : text;
+        }
+        
+        function setLanguage(lang) {
+            const dirMap = { 'ru-RU': 'ltr', 'he-IL': 'rtl', 'en-US': 'ltr' };
+            const htmlEl = document.getElementById('talk-html');
+            htmlEl.setAttribute('dir', dirMap[lang] || 'ltr');
+            document.body.setAttribute('dir', dirMap[lang] || 'ltr');
+        }
+        
+        function showError(message, showRetry = false) {
+            document.getElementById('error-message').textContent = message;
+            document.getElementById('retry-btn').textContent = t('tryAgain');
+            document.getElementById('error-container').classList.remove('hidden');
+            if (!showRetry) {
+                document.getElementById('retry-btn').classList.add('hidden');
+            }
+        }
+        
+        function hideError() {
+            document.getElementById('error-container').classList.add('hidden');
+        }
+        
+        function setStatus(text) {
+            document.getElementById('status').textContent = text;
+        }
+        
+        function showReply(text) {
+            const box = document.getElementById('reply-box');
+            if (!text) {
+                box.classList.remove('visible');
+                lastReplyText = '';
+                return;
+            }
+            lastReplyText = text;
+            box.textContent = text;
+            box.classList.add('visible');
+        }
+        
+        function showReplayButton() {
+            const btn = document.getElementById('replay-btn');
+            btn.textContent = t('tapToRepeat');
+            btn.classList.add('visible');
+        }
+        
+        function hideReplayButton() {
+            document.getElementById('replay-btn').classList.remove('visible');
+        }
+        
+        function updateTalkButton() {
+            const btn = document.getElementById('talk-btn');
+            if (dialogActive) {
+                btn.textContent = t('tapToStop');
+                btn.classList.add('btn-stop');
+            } else {
+                btn.textContent = t('tapToTalk');
+                btn.classList.remove('btn-stop');
+            }
+        }
+        
+        function getAudioEl() {
+            if (!mpAudio) {
+                mpAudio = new Audio();
+                mpAudio.playsInline = true;
+                mpAudio.setAttribute('playsinline', '');
+                mpAudio.preload = 'auto';
+            }
+            return mpAudio;
+        }
+        
+        function unlockAudio() {
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (AC && !window.__mpAudioCtx) {
+                    window.__mpAudioCtx = new AC();
+                }
+                if (window.__mpAudioCtx) {
+                    window.__mpAudioCtx.resume();
+                }
+                const a = getAudioEl();
+                a.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkZXNjYAA=';
+                a.volume = 1.0;
+                a.play().then(() => {
+                    window.__mpAudioUnlocked = true;
+                }).catch(() => {});
+            } catch (e) {
+                console.warn('Audio unlock:', e);
+            }
+        }
+        
+        async function playAudioBlob(blob, onEnd) {
+            if (lastAudioObjectUrl) {
+                URL.revokeObjectURL(lastAudioObjectUrl);
+            }
+            lastAudioObjectUrl = URL.createObjectURL(blob);
+            const audio = getAudioEl();
+            let settled = false;
+            
+            function fail() {
+                if (settled) return;
+                settled = true;
+                isSpeaking = false;
+                showReplayButton();
+                setStatus('');
+                if (onEnd) onEnd();
+            }
+            
+            audio.onended = () => {
+                if (settled) return;
+                settled = true;
+                isSpeaking = false;
+                setStatus('');
+                if (onEnd) onEnd();
+            };
+            
+            audio.onerror = fail;
+            audio.src = lastAudioObjectUrl;
+            
+            try {
+                await audio.play();
+            } catch (err) {
+                fail();
+            }
+        }
+        
+        async function speakReply(text, onEnd) {
+            if (!text) {
+                if (onEnd) onEnd();
+                return;
+            }
+            isSpeaking = true;
+            setStatus(t('speaking'));
+            unlockAudio();
+            
+            try {
+                const resp = await fetch('/tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        text: text, 
+                        language: profile.language 
+                    })
+                });
+                
+                if (!resp.ok) throw new Error('TTS unavailable');
+                
+                const blob = await resp.blob();
+                lastAudioBlob = blob;
+                await playAudioBlob(blob, onEnd);
+            } catch (e) {
+                isSpeaking = false;
+                showReplayButton();
+                setStatus('');
+                if (onEnd) onEnd();
+            }
+        }
+        
+        function playReplyManually() {
+            if (!lastReplyText) return;
+            unlockAudio();
+            hideReplayButton();
+            if (lastAudioBlob) {
+                playAudioBlob(lastAudioBlob, () => {
+                    if (dialogActive) startListening();
+                });
+            }
+        }
+        
+        function stopListening() {
+            if (recognition) {
+                try { recognition.abort(); } catch (e) {}
+                recognition = null;
+            }
+        }
+        
+        function startListening() {
+            if (isSpeaking || awaitingReply) return;
+            
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                showError(t('micError') + '. ' + t('micErrorDetail'));
+                return;
+            }
+            
+            if (recognition) return;
+            
+            const rec = new SpeechRecognition();
+            recognition = rec;
+            rec.lang = profile.language;
+            rec.interimResults = false;
+            rec.continuous = false;
+            rec.maxAlternatives = 1;
+            rec._gotResult = false;
+            
+            setStatus(t('listening'));
+            hideError();
+            
+            rec.onresult = async (event) => {
+                const userMessage = (event.results[0][0].transcript || '').trim();
+                if (!userMessage) return;
+                rec._gotResult = true;
+                awaitingReply = true;
+                if (recognition === rec) recognition = null;
+                try { rec.stop(); } catch (e) {}
+                await sendMessage(userMessage);
+            };
+            
+            rec.onend = () => {
+                if (recognition === rec) recognition = null;
+                if (!rec._gotResult && !awaitingReply && dialogActive) {
+                    setTimeout(startListening, 500);
+                }
+            };
+            
+            rec.onerror = (event) => {
+                if (recognition === rec) recognition = null;
+                if (event.error === 'not-allowed') {
+                    showError(t('micErrorDetail'));
+                    stopDialog();
+                } else if (event.error === 'no-speech') {
+                    if (dialogActive && !awaitingReply) {
+                        setTimeout(startListening, 1000);
+                    }
+                } else {
+                    console.error('Recognition error:', event.error);
+                }
+            };
+            
+            try {
+                rec.start();
+            } catch (e) {
+                console.error('Recognition start failed:', e);
+                if (recognition === rec) recognition = null;
+            }
+        }
+        
+        async function sendMessage(message, isGreeting = false) {
+            awaitingReply = true;
+            hideReplayButton();
+            setStatus(t('thinking'));
+            stopListening();
+            
+            const payload = {
+                message: message,
+                user_id: userId,
+                name: profile.name,
+                age: profile.age || '',
+                language: profile.language,
+                interests: '',
+                avoid_topics: ''
+            };
+            
+            try {
+                const resp = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (resp.status === 429) {
+                    const data = await resp.json().catch(() => ({}));
+                    showReply(data.reply || t('limitReached'));
+                    stopDialog();
+                    return;
+                }
+                
+                if (!resp.ok) throw new Error('Server error');
+                
+                const data = await resp.json();
+                awaitingReply = false;
+                showReply(data.reply);
+                await speakReply(data.reply, () => {
+                    if (dialogActive) startListening();
+                });
+            } catch (err) {
+                awaitingReply = false;
+                console.error('Chat error:', err);
+                showError(t('networkError'), true);
+            }
+        }
+        
+        function startDialog() {
+            dialogActive = true;
+            updateTalkButton();
+            unlockAudio();
+            hideError();
+            sendMessage(GREETING_TRIGGER, true);
+        }
+        
+        function stopDialog() {
+            dialogActive = false;
+            isSpeaking = false;
+            awaitingReply = false;
+            updateTalkButton();
+            setStatus('');
+            stopListening();
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
+        }
+        
+        function toggleDialog() {
+            if (dialogActive) {
+                stopDialog();
+            } else {
+                startDialog();
+            }
+        }
+        
+        // Event listeners
+        document.getElementById('talk-btn').addEventListener('click', toggleDialog);
+        document.getElementById('replay-btn').addEventListener('click', playReplyManually);
+        document.getElementById('retry-btn').addEventListener('click', () => {
+            hideError();
+            if (dialogActive) {
+                startListening();
+            } else {
+                startDialog();
+            }
+        });
+        
+        // Long press on settings button
+        let settingsLongPressTimer = null;
+        document.getElementById('settings-btn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            settingsLongPressTimer = setTimeout(() => {
+                if (confirm(t('goToSetup') + '?')) {
+                    window.location.href = '/setup';
+                }
+            }, 2000);
+        });
+        document.getElementById('settings-btn').addEventListener('touchend', () => {
+            if (settingsLongPressTimer) {
+                clearTimeout(settingsLongPressTimer);
+                settingsLongPressTimer = null;
+            }
+        });
+        
+        // Initialize
+        profile = loadProfile();
+        if (!profile || !profile.setupComplete) {
+            showError(t('noSetup'));
+            document.getElementById('retry-btn').textContent = t('goToSetup');
+            document.getElementById('retry-btn').classList.remove('hidden');
+            document.getElementById('retry-btn').addEventListener('click', () => {
+                window.location.href = '/setup';
+            });
+            document.getElementById('talk-btn').classList.add('hidden');
+        } else {
+            userId = getUserId();
+            setLanguage(profile.language);
+            document.getElementById('greeting').textContent = t('greeting', profile.name);
+            updateTalkButton();
+            
+            // Auto-start conversation after a brief delay
+            setTimeout(() => {
+                if (!dialogActive) startDialog();
+            }, 800);
+        }
+        
+        // Register service worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/service-worker.js').catch(err => {
+                console.warn('Service worker registration failed:', err);
+            });
+        }
+    </script>
+</body>
+</html>
