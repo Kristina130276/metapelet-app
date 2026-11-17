@@ -143,9 +143,9 @@ VALID_EVENTS = frozenset({
     "conversation",
 })
 
-FEEDBACK_COMFORT = frozenset({"yes", "partial", "no"})
-FEEDBACK_LIKED = frozenset({"yes", "partial", "no"})
-FEEDBACK_CONTINUE = frozenset({"yes", "maybe", "no"})
+FEEDBACK_COMFORT = frozenset({"yes", "partial", "no", ""})  # empty = not asked
+FEEDBACK_LIKED = frozenset({"yes", "partial", "no", ""})  # empty = not asked
+FEEDBACK_CONTINUE = frozenset({"yes", "maybe", "no", ""})  # empty = not asked
 
 # Database connection pool (created on first use)
 _db_connection: Optional[object] = None
@@ -660,11 +660,15 @@ def summary_html(summary: dict) -> str:
         if fb_list:
             parts = []
             for fb in fb_list:
+                # Show "—" for empty values (not asked)
+                comfortable = fb.get('comfortable') or '—'
+                liked = fb.get('liked') or '—'
+                continue_pilot = fb.get('continue_pilot') or '—'
                 parts.append(
                     f"<div class='fb'>"
-                    f"<b>удобно:</b> {fb['comfortable']} · "
-                    f"<b>понравилось:</b> {fb['liked']} · "
-                    f"<b>продолжить:</b> {fb['continue_pilot']}"
+                    f"<b>удобно:</b> {comfortable} · "
+                    f"<b>понравилось:</b> {liked} · "
+                    f"<b>продолжить:</b> {continue_pilot}"
                     f"{('<br><i>' + _escape(fb['issues']) + '</i>') if fb.get('issues') else ''}"
                     f"</div>"
                 )

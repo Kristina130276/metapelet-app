@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="ru" id="setup-html">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MetaPelet — Настройка</title>
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="MetaPelet">
+    <meta name="theme-color" content="#43a047">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: linear-gradient(165deg, #fff9ef 0%, #f5f7fa 45%, #eef5f0 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+            font-size: 20px;
+        }
+        
+        [dir="rtl"] { direction: rtl; text-align: right; }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        
+        .logo {
+            width: 80px;
+            height: 80px;
+            border-radius: 20px;
+            background: linear-gradient(145deg, #ffd966 0%, #f4b942 100%);
+            color: #4a3b1f;
+            font-size: 2.5rem;
+            font-weight: 800;
+            line-height: 80px;
+            margin: 0 auto 16px;
+            box-shadow: 0 8px 20px rgba(244, 185, 66, 0.35);
+        }
+        
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 12px;
+            color: #2d3436;
+        }
+        
+        .subtitle {
+            font-size: 1.1rem;
+            color: #666;
+            line-height: 1.5;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 32px 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            margin-bottom: 24px;
+        }
+        
+        .field {
+            margin-bottom: 24px;
+        }
+        
+        .field label {
+            display: block;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #444;
+        }
+        
+        .field input,
+        .field select {
+            width: 100%;
+            font-size: 1.3rem;
+            padding: 18px 16px;
+            border: 3px solid #ddd;
+            border-radius: 16px;
+            outline: none;
+            font-family: inherit;
+            color: #333;
+            background: white;
+        }
+        
+        .field input:focus,
+        .field select:focus {
+            border-color: #4CAF50;
+        }
+        
+        .btn-primary {
+            width: 100%;
+            font-size: 1.5rem;
+            font-weight: 600;
+            padding: 24px;
+            border-radius: 18px;
+            border: none;
+            background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(46, 125, 50, 0.28);
+            transition: all 0.2s;
+        }
+        
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+        
+        .status {
+            text-align: center;
+            margin-top: 16px;
+            font-size: 1.1rem;
+            min-height: 1.5em;
+            color: #666;
+        }
+        
+        .install-section {
+            display: none;
+        }
+        
+        .install-section.visible {
+            display: block;
+        }
+        
+        .install-card {
+            background: #f0f7f0;
+            border: 3px solid #43a047;
+            padding: 24px;
+            border-radius: 16px;
+            margin-top: 20px;
+        }
+        
+        .install-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #2e7d32;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        
+        .install-steps {
+            font-size: 1.1rem;
+            line-height: 1.7;
+            color: #333;
+            padding-left: 24px;
+        }
+        
+        [dir="rtl"] .install-steps {
+            padding-left: 0;
+            padding-right: 24px;
+        }
+        
+        .install-steps li {
+            margin-bottom: 12px;
+        }
+        
+        .btn-done {
+            margin-top: 20px;
+            background: #2e7d32;
+        }
+        
+        .lang-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 32px;
+        }
+        
+        .lang-btn {
+            flex: 1;
+            padding: 14px 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border: 3px solid #ddd;
+            border-radius: 14px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #555;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .lang-btn.active {
+            background: #43a047;
+            color: white;
+            border-color: #43a047;
+        }
+        
+        @media (max-width: 400px) {
+            .lang-btn {
+                font-size: 1rem;
+                padding: 12px 6px;
+            }
+        }
+        
+        .hidden { display: none; }
+        
+        [data-lang] { display: none; }
+        [data-lang].active { display: block; }
+        
+        label [data-lang] { display: none; }
+        label [data-lang].active { display: inline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">M</div>
+            <h1 data-lang="ru" class="active">Настройка MetaPelet</h1>
+            <h1 data-lang="he">הגדרת MetaPelet</h1>
+            <h1 data-lang="en">MetaPelet Setup</h1>
+            <p class="subtitle" data-lang="ru" class="active">
+                Простая настройка для вашего близкого человека
+            </p>
+            <p class="subtitle" data-lang="he">
+                הגדרה פשוטה עבור יקירכם
+            </p>
+            <p class="subtitle" data-lang="en">
+                Simple setup for your loved one
+            </p>
+        </div>
+        
+        <div id="setup-form" class="card">
+            <div class="lang-selector">
+                <button type="button" class="lang-btn active" data-lang-btn="ru">Русский</button>
+                <button type="button" class="lang-btn" data-lang-btn="he">עברית</button>
+                <button type="button" class="lang-btn" data-lang-btn="en">English</button>
+            </div>
+            
+            <div class="field">
+                <label id="name-label">
+                    <span data-lang="ru" class="active">Имя</span>
+                    <span data-lang="he">שם</span>
+                    <span data-lang="en">Name</span>
+                </label>
+                <input type="text" id="name-input" autocomplete="name" placeholder="">
+            </div>
+            
+            <div class="field">
+                <label id="age-label">
+                    <span data-lang="ru" class="active">Возраст (необязательно)</span>
+                    <span data-lang="he">גיל (אופציונלי)</span>
+                    <span data-lang="en">Age (optional)</span>
+                </label>
+                <input type="number" id="age-input" min="1" max="120" placeholder="">
+            </div>
+            
+            <button type="button" class="btn-primary" id="save-btn">
+                <span data-lang="ru" class="active">Сохранить</span>
+                <span data-lang="he">שמור</span>
+                <span data-lang="en">Save</span>
+            </button>
+            
+            <div class="status" id="status"></div>
+        </div>
+        
+        <div id="install-section" class="install-section">
+            <div class="install-card">
+                <div class="install-title" data-lang="ru" class="active">
+                    Как добавить на домашний экран
+                </div>
+                <div class="install-title" data-lang="he">
+                    כיצד להוסיף למסך הבית
+                </div>
+                <div class="install-title" data-lang="en">
+                    How to add to home screen
+                </div>
+                
+                <!-- Android instructions -->
+                <div id="android-instructions" class="hidden">
+                    <ol class="install-steps" data-lang="ru" class="active">
+                        <li>Нажмите кнопку меню (⋮) в браузере</li>
+                        <li>Выберите «Добавить на главный экран» или «Установить приложение»</li>
+                        <li>Нажмите «Добавить» или «Установить»</li>
+                        <li>Теперь иконка MetaPelet на домашнем экране — нажмите её для разговора</li>
+                    </ol>
+                    <ol class="install-steps" data-lang="he">
+                        <li>לחצו על תפריט (⋮) בדפדפן</li>
+                        <li>בחרו "הוסף למסך הבית" או "התקן אפליקציה"</li>
+                        <li>לחצו "הוסף" או "התקן"</li>
+                        <li>עכשיו סמל MetaPelet במסך הבית - לחצו עליו לשיחה</li>
+                    </ol>
+                    <ol class="install-steps" data-lang="en">
+                        <li>Tap the menu button (⋮) in your browser</li>
+                        <li>Select "Add to Home screen" or "Install app"</li>
+                        <li>Tap "Add" or "Install"</li>
+                        <li>Now MetaPelet icon is on the home screen — tap it to talk</li>
+                    </ol>
+                </div>
+                
+                <!-- iOS instructions -->
+                <div id="ios-instructions" class="hidden">
+                    <ol class="install-steps" data-lang="ru" class="active">
+                        <li>Нажмите кнопку «Поделиться» <span style="font-size: 1.4em;">⎆</span> внизу экрана</li>
+                        <li>Прокрутите вниз и выберите «На экран "Домой"»</li>
+                        <li>Нажмите «Добавить» вверху справа</li>
+                        <li>Теперь иконка MetaPelet на домашнем экране — нажмите её для разговора</li>
+                    </ol>
+                    <ol class="install-steps" data-lang="he">
+                        <li>לחצו על כפתור "שתף" <span style="font-size: 1.4em;">⎆</span> בתחתית המסך</li>
+                        <li>גללו למטה ובחרו "הוסף למסך הבית"</li>
+                        <li>לחצו "הוסף" בפינה העליונה</li>
+                        <li>עכשיו סמל MetaPelet במסך הבית - לחצו עליו לשיחה</li>
+                    </ol>
+                    <ol class="install-steps" data-lang="en">
+                        <li>Tap the Share button <span style="font-size: 1.4em;">⎆</span> at the bottom</li>
+                        <li>Scroll down and select "Add to Home Screen"</li>
+                        <li>Tap "Add" in the top right</li>
+                        <li>Now MetaPelet icon is on the home screen — tap it to talk</li>
+                    </ol>
+                </div>
+                
+                <button type="button" class="btn-primary btn-done" id="done-btn">
+                    <span data-lang="ru" class="active">Готово</span>
+                    <span data-lang="he">סיימתי</span>
+                    <span data-lang="en">Done</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const ELDER_PROFILE_KEY = 'metapelet_elder_profile';
+        let currentLang = 'ru';
+        let deferredPrompt = null;
+        
+        // Detect platform
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isAndroid = /Android/.test(navigator.userAgent);
+        
+        function setLanguage(lang) {
+            currentLang = lang;
+            document.querySelectorAll('[data-lang]').forEach(el => {
+                el.classList.toggle('active', el.dataset.lang === lang);
+            });
+            document.querySelectorAll('[data-lang-btn]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.langBtn === lang);
+            });
+            const dirMap = { ru: 'ltr', he: 'rtl', en: 'ltr' };
+            document.getElementById('setup-html').setAttribute('dir', dirMap[lang]);
+            document.body.setAttribute('dir', dirMap[lang]);
+            
+            // Update placeholders
+            const placeholders = {
+                ru: { name: 'Например: Мария', age: '' },
+                he: { name: 'למשל: מריה', age: '' },
+                en: { name: 'For example: Maria', age: '' }
+            };
+            document.getElementById('name-input').placeholder = placeholders[lang].name;
+        }
+        
+        document.querySelectorAll('[data-lang-btn]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                setLanguage(btn.dataset.langBtn);
+            });
+        });
+        
+        // Capture beforeinstallprompt for Android
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+        });
+        
+        function showStatus(message, isError = false) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.style.color = isError ? '#d32f2f' : '#666';
+        }
+        
+        function showInstallInstructions() {
+            document.getElementById('setup-form').style.display = 'none';
+            document.getElementById('install-section').classList.add('visible');
+            
+            if (isIOS) {
+                document.getElementById('ios-instructions').classList.remove('hidden');
+            } else {
+                document.getElementById('android-instructions').classList.remove('hidden');
+            }
+        }
+        
+        function saveProfile() {
+            const name = document.getElementById('name-input').value.trim();
+            const age = document.getElementById('age-input').value.trim();
+            
+            if (!name) {
+                const messages = {
+                    ru: 'Пожалуйста, введите имя',
+                    he: 'נא להזין שם',
+                    en: 'Please enter a name'
+                };
+                showStatus(messages[currentLang], true);
+                return;
+            }
+            
+            const profile = {
+                name: name,
+                age: age,
+                language: currentLang === 'ru' ? 'ru-RU' : currentLang === 'he' ? 'he-IL' : 'en-US',
+                setupComplete: true
+            };
+            
+            localStorage.setItem(ELDER_PROFILE_KEY, JSON.stringify(profile));
+            
+            const messages = {
+                ru: 'Настройка сохранена!',
+                he: 'ההגדרות נשמרו!',
+                en: 'Setup saved!'
+            };
+            showStatus(messages[currentLang]);
+            
+            // Try to trigger install prompt on Android
+            if (deferredPrompt && isAndroid) {
+                setTimeout(() => {
+                    deferredPrompt.prompt();
+                    deferredPrompt.userChoice.then((choiceResult) => {
+                        if (choiceResult.outcome === 'accepted') {
+                            window.location.href = '/talk';
+                        } else {
+                            showInstallInstructions();
+                        }
+                        deferredPrompt = null;
+                    });
+                }, 300);
+            } else {
+                setTimeout(showInstallInstructions, 500);
+            }
+        }
+        
+        document.getElementById('save-btn').addEventListener('click', saveProfile);
+        document.getElementById('done-btn').addEventListener('click', () => {
+            window.location.href = '/talk';
+        });
+        
+        // Check if already set up
+        const existing = localStorage.getItem(ELDER_PROFILE_KEY);
+        if (existing) {
+            try {
+                const profile = JSON.parse(existing);
+                if (profile.setupComplete) {
+                    window.location.href = '/talk';
+                }
+            } catch (e) {
+                console.warn('Invalid profile data');
+            }
+        }
+        
+        // Set initial language
+        setLanguage('ru');
+    </script>
+</body>
+</html>
