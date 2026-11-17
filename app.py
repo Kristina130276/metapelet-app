@@ -7,6 +7,7 @@ import base64
 import re
 import requests as http_requests
 from pathlib import Path
+import logging
 
 load_dotenv()
 
@@ -15,6 +16,10 @@ import budget_guard as budget
 
 app = Flask(__name__)
 CORS(app)
+
+# Configure logging if not already configured
+if not logging.getLogger().hasHandlers():
+    logging.basicConfig(level=logging.INFO)
 
 # Initialize database tables if DATABASE_URL is set
 pilot.init_database()
@@ -444,8 +449,10 @@ def budget_status():
 
 @app.route("/health", methods=["GET"])
 def health():
-    """Lightweight health check endpoint for uptime monitoring."""
-    return jsonify({"status": "ok"}), 200
+    """Lightweight health check endpoint for uptime monitoring with storage info."""
+    health_info = {"status": "ok"}
+    health_info.update(pilot.check_database_health())
+    return jsonify(health_info), 200
 
 
 @app.route("/tts/check", methods=["GET"])
