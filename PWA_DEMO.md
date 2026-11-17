@@ -11,20 +11,20 @@ Elderly people can now use MetaPelet with **ONE tap** from their phone home scre
 The relative opens `https://www.metapelet.org/setup` and fills in basic info:
 
 **Russian Setup:**
-![Setup Russian](static/screenshot-pwa-setup-ru.png)
+![Setup Russian](docs/screenshots/screenshot-pwa-setup-ru.png)
 
 **Hebrew Setup (RTL):**
-![Setup Hebrew](static/screenshot-pwa-setup-he.png)
+![Setup Hebrew](docs/screenshots/screenshot-pwa-setup-he.png)
 
 ---
 
 ### Step 2: Add to Home Screen Instructions
 
 **Android (Chrome):**
-![Install Android](static/screenshot-pwa-install-android-ru.png)
+![Install Android](docs/screenshots/screenshot-pwa-install-android-ru.png)
 
 **iPhone (Safari):**
-![Install iOS Hebrew](static/screenshot-pwa-install-ios-he.png)
+![Install iOS Hebrew](docs/screenshots/screenshot-pwa-install-ios-he.png)
 
 ---
 
@@ -33,10 +33,10 @@ The relative opens `https://www.metapelet.org/setup` and fills in basic info:
 After setup, tapping the home-screen icon goes straight to conversation:
 
 **Russian Interface:**
-![Talk Russian](static/screenshot-pwa-talk-ru.png)
+![Talk Russian](docs/screenshots/screenshot-pwa-talk-ru.png)
 
 **Hebrew Interface (RTL):**
-![Talk Hebrew](static/screenshot-pwa-talk-he.png)
+![Talk Hebrew](docs/screenshots/screenshot-pwa-talk-he.png)
 
 ---
 

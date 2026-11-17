@@ -171,14 +171,14 @@
         
         .lang-selector {
             display: flex;
-            gap: 12px;
+            gap: 8px;
             margin-bottom: 32px;
         }
         
         .lang-btn {
             flex: 1;
-            padding: 16px;
-            font-size: 1.2rem;
+            padding: 14px 8px;
+            font-size: 1.1rem;
             font-weight: 600;
             border: 3px solid #ddd;
             border-radius: 14px;
@@ -186,6 +186,10 @@
             cursor: pointer;
             transition: all 0.2s;
             color: #555;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         
         .lang-btn.active {
@@ -194,10 +198,20 @@
             border-color: #43a047;
         }
         
+        @media (max-width: 400px) {
+            .lang-btn {
+                font-size: 1rem;
+                padding: 12px 6px;
+            }
+        }
+        
         .hidden { display: none; }
         
         [data-lang] { display: none; }
         [data-lang].active { display: block; }
+        
+        label [data-lang] { display: none; }
+        label [data-lang].active { display: inline; }
     </style>
 </head>
 <body>
@@ -226,16 +240,20 @@
             </div>
             
             <div class="field">
-                <label data-lang="ru" class="active">Имя</label>
-                <label data-lang="he">שם</label>
-                <label data-lang="en">Name</label>
+                <label id="name-label">
+                    <span data-lang="ru" class="active">Имя</span>
+                    <span data-lang="he">שם</span>
+                    <span data-lang="en">Name</span>
+                </label>
                 <input type="text" id="name-input" autocomplete="name" placeholder="">
             </div>
             
             <div class="field">
-                <label data-lang="ru" class="active">Возраст (необязательно)</label>
-                <label data-lang="he">גיל (אופציונלי)</label>
-                <label data-lang="en">Age (optional)</label>
+                <label id="age-label">
+                    <span data-lang="ru" class="active">Возраст (необязательно)</span>
+                    <span data-lang="he">גיל (אופציונלי)</span>
+                    <span data-lang="en">Age (optional)</span>
+                </label>
                 <input type="number" id="age-input" min="1" max="120" placeholder="">
             </div>
             

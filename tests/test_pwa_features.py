@@ -36,11 +36,14 @@ class PWARoutesTest(unittest.TestCase):
         self.assertGreater(len(data["icons"]), 0)
     
     def test_service_worker_exists(self):
-        """Test /static/service-worker.js route returns JavaScript."""
-        resp = self.client.get("/static/service-worker.js")
+        """Test /service-worker.js route returns JavaScript from root."""
+        resp = self.client.get("/service-worker.js")
         self.assertEqual(resp.status_code, 200)
         self.assertIn("application/javascript", resp.content_type)
         self.assertIn(b"service worker", resp.data.lower())
+        # Check for Service-Worker-Allowed header
+        self.assertIn("Service-Worker-Allowed", resp.headers)
+        self.assertEqual(resp.headers["Service-Worker-Allowed"], "/")
     
     def test_sitemap_includes_new_pages(self):
         """Test sitemap includes /setup and /talk."""
@@ -107,11 +110,46 @@ class PWAContentTest(unittest.TestCase):
         self.assertIn('user-scalable=yes', html)
     
     def test_talk_page_service_worker_registration(self):
-        """Test talk page registers service worker."""
+        """Test talk page registers service worker from root."""
         resp = self.client.get("/talk")
         html = resp.data.decode('utf-8')
         self.assertIn('serviceWorker', html)
-        self.assertIn('service-worker.js', html)
+        self.assertIn("'/service-worker.js'", html)
+    
+    def test_talk_page_has_pilot_tracking(self):
+        """Test talk page includes pilot event tracking."""
+        resp = self.client.get("/talk")
+        html = resp.data.decode('utf-8')
+        self.assertIn('pilotEvent', html)
+        self.assertIn('PILOT_SESSION_KEY', html)
+        self.assertIn('/pilot/event', html)
+    
+    def test_talk_page_has_feedback_elements(self):
+        """Test talk page includes feedback prompt for elderly users."""
+        resp = self.client.get("/talk")
+        html = resp.data.decode('utf-8')
+        self.assertIn('feedback-box', html)
+        self.assertIn('feedbackQuestion', html)
+        self.assertIn('submitFeedback', html)
+        self.assertIn('/pilot/feedback', html)
+
+
+class ServiceWorkerScopeTest(unittest.TestCase):
+    """Test service worker is served from root with proper scope."""
+    
+    def setUp(self):
+        self.client = app.test_client()
+    
+    def test_service_worker_not_caching_api_endpoints(self):
+        """Test service worker excludes API endpoints from caching."""
+        resp = self.client.get("/service-worker.js")
+        content = resp.data.decode('utf-8')
+        # Check that API endpoints are excluded
+        self.assertIn('/chat', content)
+        self.assertIn('/tts', content)
+        self.assertIn('/pilot/', content)
+        self.assertIn('/health', content)
+        self.assertIn('/admin/', content)
 
 
 class PWAManifestValidationTest(unittest.TestCase):

@@ -39,7 +39,9 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/chat') || 
       url.pathname.startsWith('/tts') || 
       url.pathname.startsWith('/pilot/') ||
-      url.pathname.startsWith('/budget/')) {
+      url.pathname.startsWith('/budget/') ||
+      url.pathname.startsWith('/health') ||
+      url.pathname.startsWith('/admin/')) {
     return;
   }
   

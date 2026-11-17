@@ -294,9 +294,12 @@ def manifest():
     return send_file("static/manifest.json", mimetype="application/manifest+json")
 
 
-@app.route("/static/service-worker.js")
+@app.route("/service-worker.js")
 def service_worker():
-    return send_file("static/service-worker.js", mimetype="application/javascript")
+    """Serve service worker from root for proper scope."""
+    resp = send_file("static/service-worker.js", mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
 
 
 @app.route("/pilot/event", methods=["POST"])
