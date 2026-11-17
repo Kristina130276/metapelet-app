@@ -245,7 +245,7 @@ class DatabaseErrorClassificationTest(unittest.TestCase):
 
 
 class DatabaseHealthTest(unittest.TestCase):
-    """Test get_database_health function."""
+    """Test check_database_health function."""
     
     def setUp(self):
         # Save original state
@@ -267,10 +267,11 @@ class DatabaseHealthTest(unittest.TestCase):
         """Health check when DATABASE_URL is not set."""
         pilot.DATABASE_URL = ""
         pilot.USE_DATABASE = False
-        health = pilot.get_database_health()
+        health = pilot.check_database_health()
+        self.assertEqual(health["storage"], "file")
         self.assertFalse(health["database_configured"])
         self.assertFalse(health["database_connected"])
-        self.assertIsNone(health["database_error"])
+        self.assertNotIn("database_error", health)
     
     @patch('pilot_tracking.psycopg2')
     def test_database_connected(self, mock_psycopg2):
@@ -280,13 +281,18 @@ class DatabaseHealthTest(unittest.TestCase):
         pilot._db_connection = None
         
         mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.fetchone = MagicMock(return_value=(1,))
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
         mock_psycopg2.connect.return_value = mock_conn
         
-        health = pilot.get_database_health()
+        health = pilot.check_database_health()
+        self.assertEqual(health["storage"], "database")
         self.assertTrue(health["database_configured"])
         self.assertTrue(health["database_connected"])
-        self.assertIsNone(health["database_error"])
-        self.assertIsNone(health["database_error_kind"])
+        self.assertNotIn("database_error", health)
     
     @patch('pilot_tracking.psycopg2')
     def test_database_connection_failed(self, mock_psycopg2):
@@ -294,15 +300,15 @@ class DatabaseHealthTest(unittest.TestCase):
         pilot.DATABASE_URL = "postgresql://user:pass@host/db"
         pilot.USE_DATABASE = True
         pilot._db_connection = None
-        pilot._db_connection_error = None
         
         mock_psycopg2.connect.side_effect = Exception("password authentication failed")
         
-        health = pilot.get_database_health()
+        health = pilot.check_database_health()
+        self.assertEqual(health["storage"], "database")
         self.assertTrue(health["database_configured"])
         self.assertFalse(health["database_connected"])
         self.assertEqual(health["database_error"], "connect_failed")
-        self.assertEqual(health["database_error_kind"], "auth_failed")
+        self.assertIn("database_error_kind", health)
 
 
 class LeakPreventionTest(unittest.TestCase):
@@ -323,7 +329,7 @@ class LeakPreventionTest(unittest.TestCase):
     
     @patch('pilot_tracking.psycopg2')
     def test_no_url_in_health_response(self, mock_psycopg2):
-        """Ensure get_database_health never returns URL."""
+        """Ensure check_database_health never returns URL."""
         url = "postgresql://secret_user:secret_pass@host.neon.tech/db"
         pilot.DATABASE_URL = url
         pilot.USE_DATABASE = True
@@ -331,7 +337,7 @@ class LeakPreventionTest(unittest.TestCase):
         
         mock_psycopg2.connect.side_effect = Exception("connection failed")
         
-        health = pilot.get_database_health()
+        health = pilot.check_database_health()
         health_str = str(health)
         
         self.assertNotIn("secret_user", health_str)

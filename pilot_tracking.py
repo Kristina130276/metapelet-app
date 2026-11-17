@@ -160,7 +160,7 @@ def _get_db_connection():
         return None
     if _db_connection is None:
         try:
-            _db_connection = psycopg2.connect(DATABASE_URL)
+            _db_connection = psycopg2.connect(DATABASE_URL, connect_timeout=3)
             _db_connection.autocommit = True
             _db_connection_error = None
             _db_error_kind = None
@@ -173,32 +173,58 @@ def _get_db_connection():
     return _db_connection
 
 
-def get_database_health() -> dict:
-    """Get database health status for diagnostics.
+def check_database_health() -> dict:
+    """Check database connection health for /health endpoint.
     
-    Returns dict with database_configured, database_connected, and optional error fields.
-    Never includes actual URLs or sensitive exception text.
+    Returns a dict with storage info, never exposing secrets:
+    - storage: "database" or "file"
+    - database_configured: bool (True if DATABASE_URL is set)
+    - database_connected: bool (True if SELECT 1 succeeds)
+    - database_error: "connect_failed" (only on failure)
+    - database_error_kind: categorized error type (only on failure)
     """
     result = {
+        "storage": "database" if USE_DATABASE else "file",
         "database_configured": bool(DATABASE_URL),
-        "database_connected": False,
-        "database_error": None,
-        "database_error_kind": None,
     }
     
-    if not DATABASE_URL:
+    if not USE_DATABASE:
+        result["database_connected"] = False
         return result
     
-    # Try to get connection
-    conn = _get_db_connection()
+    global _db_connection
     
-    if conn:
+    # Try to check the existing connection first
+    if _db_connection is not None:
+        try:
+            with _db_connection.cursor() as cur:
+                # Set statement timeout to 2 seconds
+                cur.execute("SET statement_timeout = 2000")
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            result["database_connected"] = True
+            return result
+        except Exception:
+            # Connection is dead/closed, try to reconnect once
+            try:
+                _db_connection.close()
+            except Exception:
+                pass
+            _db_connection = None
+    
+    # Try to reconnect
+    try:
+        _db_connection = psycopg2.connect(DATABASE_URL, connect_timeout=3)
+        _db_connection.autocommit = True
+        with _db_connection.cursor() as cur:
+            cur.execute("SET statement_timeout = 2000")
+            cur.execute("SELECT 1")
+            cur.fetchone()
         result["database_connected"] = True
-        result["database_error"] = None
-        result["database_error_kind"] = None
-    else:
+    except Exception as e:
+        result["database_connected"] = False
         result["database_error"] = "connect_failed"
-        result["database_error_kind"] = _db_error_kind
+        result["database_error_kind"] = _classify_db_error(e)
     
     return result
 

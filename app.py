@@ -7,8 +7,11 @@ import base64
 import re
 import requests as http_requests
 from pathlib import Path
+import logging
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
 
 import pilot_tracking as pilot
 import budget_guard as budget
@@ -444,10 +447,10 @@ def budget_status():
 
 @app.route("/health", methods=["GET"])
 def health():
-    """Health check endpoint with database diagnostics."""
-    health_data = {"status": "ok"}
-    health_data.update(pilot.get_database_health())
-    return jsonify(health_data), 200
+    """Lightweight health check endpoint for uptime monitoring with storage info."""
+    health_info = {"status": "ok"}
+    health_info.update(pilot.check_database_health())
+    return jsonify(health_info), 200
 
 
 @app.route("/tts/check", methods=["GET"])
