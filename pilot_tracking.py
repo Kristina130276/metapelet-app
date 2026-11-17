@@ -31,7 +31,21 @@ DATA_DIR = Path(os.environ.get("PILOT_DATA_DIR", "data"))
 EVENTS_PATH = DATA_DIR / "pilot_events.jsonl"
 FEEDBACK_PATH = DATA_DIR / "pilot_feedback.jsonl"
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
+def _sanitize_database_url(raw_url: str) -> str:
+    """Sanitize DATABASE_URL: strip whitespace, quotes, and 'DATABASE_URL=' prefix."""
+    url = raw_url.strip()
+    # Remove 'DATABASE_URL=' prefix first (case-insensitive)
+    if url.lower().startswith("database_url="):
+        url = url[13:]
+    # Remove surrounding single or double quotes
+    url = url.strip()
+    if len(url) >= 2 and url[0] in ('"', "'") and url[-1] == url[0]:
+        url = url[1:-1]
+    return url.strip()
+
+
+DATABASE_URL = _sanitize_database_url(os.environ.get("DATABASE_URL", ""))
 USE_DATABASE = bool(DATABASE_URL and PSYCOPG2_AVAILABLE)
 
 VALID_EVENTS = frozenset({
@@ -57,11 +71,11 @@ def _get_db_connection():
         return None
     if _db_connection is None:
         try:
-            _db_connection = psycopg2.connect(DATABASE_URL)
+            _db_connection = psycopg2.connect(DATABASE_URL, connect_timeout=3)
             _db_connection.autocommit = True
             logger.info("Database connection established")
         except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
+            logger.error(f"Failed to connect to database: connect_failed ({type(e).__name__})")
             return None
     return _db_connection
 
@@ -130,7 +144,7 @@ def init_database():
             
             logger.info("Database tables initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize database tables: {e}")
+        logger.error(f"Failed to initialize database tables: init_failed ({type(e).__name__})")
 
 
 def _now_iso() -> str:
@@ -555,3 +569,57 @@ def _escape(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+def check_database_health() -> dict:
+    """Check database connection health for /health endpoint.
+    
+    Returns a dict with storage info, never exposing secrets:
+    - storage: "database" or "file"
+    - database_configured: bool (True if DATABASE_URL is set)
+    - database_connected: bool (True if SELECT 1 succeeds)
+    - database_error: "connect_failed" or "init_failed" (only on failure)
+    """
+    result = {
+        "storage": "database" if USE_DATABASE else "file",
+        "database_configured": bool(DATABASE_URL),
+    }
+    
+    if not USE_DATABASE:
+        result["database_connected"] = False
+        return result
+    
+    global _db_connection
+    
+    # Try to check the existing connection first
+    if _db_connection is not None:
+        try:
+            with _db_connection.cursor() as cur:
+                # Set statement timeout to 2 seconds
+                cur.execute("SET statement_timeout = 2000")
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            result["database_connected"] = True
+            return result
+        except Exception:
+            # Connection is dead/closed, try to reconnect once
+            try:
+                _db_connection.close()
+            except Exception:
+                pass
+            _db_connection = None
+    
+    # Try to reconnect
+    try:
+        _db_connection = psycopg2.connect(DATABASE_URL, connect_timeout=3)
+        _db_connection.autocommit = True
+        with _db_connection.cursor() as cur:
+            cur.execute("SET statement_timeout = 2000")
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        result["database_connected"] = True
+    except Exception:
+        result["database_connected"] = False
+        result["database_error"] = "connect_failed"
+    
+    return result
