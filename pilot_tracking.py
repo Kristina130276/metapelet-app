@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -31,7 +32,107 @@ DATA_DIR = Path(os.environ.get("PILOT_DATA_DIR", "data"))
 EVENTS_PATH = DATA_DIR / "pilot_events.jsonl"
 FEEDBACK_PATH = DATA_DIR / "pilot_feedback.jsonl"
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
+def _sanitize_database_url(raw_value: str) -> str:
+    """Extract and normalize PostgreSQL URL from potentially messy input.
+    
+    Handles cases where users paste multi-line Neon .env blocks or psql snippets
+    into the DATABASE_URL env var. Never logs or returns the URL in exceptions.
+    
+    Args:
+        raw_value: Raw DATABASE_URL value from environment
+        
+    Returns:
+        Clean PostgreSQL URL or empty string if none found
+    """
+    if not raw_value:
+        return ""
+    
+    # Search for all postgres URLs in the raw value
+    # Matches postgres:// or postgresql:// up to whitespace or quote
+    url_pattern = r'(postgres(?:ql)?://[^\s\'"]+)'
+    matches = re.findall(url_pattern, raw_value)
+    
+    if not matches:
+        # No URL found, fall back to original behavior (strip whitespace)
+        return raw_value.strip()
+    
+    # If multiple URLs found, prefer the one from DATABASE_URL= line
+    selected_url = None
+    for line in raw_value.split('\n'):
+        line_stripped = line.strip()
+        if line_stripped.startswith('DATABASE_URL='):
+            # Extract value after = and strip quotes
+            value = line_stripped[len('DATABASE_URL='):].strip()
+            value = value.strip('\'"')
+            # Find URL in this line
+            line_matches = re.findall(url_pattern, value)
+            if line_matches:
+                selected_url = line_matches[0]
+                break
+    
+    # If no DATABASE_URL= line, use first URL found (skip DATABASE_URL_UNPOOLED if possible)
+    if not selected_url:
+        for line in raw_value.split('\n'):
+            if 'DATABASE_URL_UNPOOLED' in line:
+                continue
+            line_matches = re.findall(url_pattern, line)
+            if line_matches:
+                selected_url = line_matches[0]
+                break
+        
+        # If still nothing, use first match (even if it's UNPOOLED)
+        if not selected_url:
+            selected_url = matches[0]
+    
+    # Strip any trailing quotes
+    selected_url = selected_url.strip('\'"')
+    
+    # Normalize postgres:// to postgresql://
+    if selected_url.startswith('postgres://'):
+        selected_url = 'postgresql://' + selected_url[len('postgres://'):]
+    
+    # Add sslmode=require for neon.tech if not present
+    if 'neon.tech' in selected_url and 'sslmode=' not in selected_url:
+        separator = '&' if '?' in selected_url else '?'
+        selected_url = selected_url + separator + 'sslmode=require'
+    
+    return selected_url
+
+
+def _classify_db_error(error: Exception) -> str:
+    """Classify database connection error into safe category.
+    
+    Returns one of: 'invalid_dsn', 'auth_failed', 'timeout', 'host_not_found', 'ssl', 'other'
+    Never returns exception text to avoid leaking secrets.
+    """
+    error_str = str(error).lower()
+    error_type = type(error).__name__
+    
+    # ProgrammingError usually means DSN parsing failed
+    if error_type == 'ProgrammingError' or 'invalid dsn' in error_str or 'parse' in error_str:
+        return 'invalid_dsn'
+    
+    # Authentication errors
+    if 'password authentication failed' in error_str or 'auth' in error_str:
+        return 'auth_failed'
+    
+    # Timeout errors
+    if 'timeout' in error_str or error_type in ('TimeoutError', 'ConnectTimeout'):
+        return 'timeout'
+    
+    # Host resolution errors
+    if 'could not translate host name' in error_str or 'name or service not known' in error_str:
+        return 'host_not_found'
+    
+    # SSL errors
+    if 'ssl' in error_str or 'certificate' in error_str:
+        return 'ssl'
+    
+    return 'other'
+
+
+DATABASE_URL = _sanitize_database_url(os.environ.get("DATABASE_URL", ""))
 USE_DATABASE = bool(DATABASE_URL and PSYCOPG2_AVAILABLE)
 
 VALID_EVENTS = frozenset({
@@ -48,22 +149,58 @@ FEEDBACK_CONTINUE = frozenset({"yes", "maybe", "no"})
 
 # Database connection pool (created on first use)
 _db_connection: Optional[object] = None
+_db_connection_error: Optional[Exception] = None
+_db_error_kind: Optional[str] = None
 
 
 def _get_db_connection():
     """Get or create database connection."""
-    global _db_connection
+    global _db_connection, _db_connection_error, _db_error_kind
     if not USE_DATABASE:
         return None
     if _db_connection is None:
         try:
             _db_connection = psycopg2.connect(DATABASE_URL)
             _db_connection.autocommit = True
+            _db_connection_error = None
+            _db_error_kind = None
             logger.info("Database connection established")
         except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
+            _db_connection_error = e
+            _db_error_kind = _classify_db_error(e)
+            logger.error(f"Failed to connect to database: {type(e).__name__} ({_db_error_kind})")
             return None
     return _db_connection
+
+
+def get_database_health() -> dict:
+    """Get database health status for diagnostics.
+    
+    Returns dict with database_configured, database_connected, and optional error fields.
+    Never includes actual URLs or sensitive exception text.
+    """
+    result = {
+        "database_configured": bool(DATABASE_URL),
+        "database_connected": False,
+        "database_error": None,
+        "database_error_kind": None,
+    }
+    
+    if not DATABASE_URL:
+        return result
+    
+    # Try to get connection
+    conn = _get_db_connection()
+    
+    if conn:
+        result["database_connected"] = True
+        result["database_error"] = None
+        result["database_error_kind"] = None
+    else:
+        result["database_error"] = "connect_failed"
+        result["database_error_kind"] = _db_error_kind
+    
+    return result
 
 
 def init_database():
@@ -278,19 +415,19 @@ def record_event(
             except Exception as e:
                 logger.error(f"Failed to record event to database: {e}")
                 return False, "database_error"
-    else:
-        # Fallback to file storage
-        row = {
-            "ts": ts,
-            "session_id": sid,
-            "event": event,
-            "utm_source": (utm_source or "")[:80],
-            "utm_campaign": (utm_campaign or "")[:80],
-            "utm_content": (utm_content or "")[:80],
-            "meta": safe_meta,
-        }
-        _append_jsonl(EVENTS_PATH, row)
-        return True, ""
+    
+    # Fallback to file storage (either USE_DATABASE is False or connection failed)
+    row = {
+        "ts": ts,
+        "session_id": sid,
+        "event": event,
+        "utm_source": (utm_source or "")[:80],
+        "utm_campaign": (utm_campaign or "")[:80],
+        "utm_content": (utm_content or "")[:80],
+        "meta": safe_meta,
+    }
+    _append_jsonl(EVENTS_PATH, row)
+    return True, ""
 
 
 def record_feedback(
@@ -340,22 +477,22 @@ def record_feedback(
             except Exception as e:
                 logger.error(f"Failed to record feedback to database: {e}")
                 return False, "database_error"
-    else:
-        # Fallback to file storage
-        row = {
-            "ts": ts,
-            "session_id": sid,
-            "comfortable": comfortable,
-            "liked": liked,
-            "continue_pilot": continue_pilot,
-            "issues": issues_text,
-            "language": lang,
-            "utm_source": (utm_source or "")[:80],
-            "utm_campaign": (utm_campaign or "")[:80],
-            "utm_content": (utm_content or "")[:80],
-        }
-        _append_jsonl(FEEDBACK_PATH, row)
-        return True, ""
+    
+    # Fallback to file storage (either USE_DATABASE is False or connection failed)
+    row = {
+        "ts": ts,
+        "session_id": sid,
+        "comfortable": comfortable,
+        "liked": liked,
+        "continue_pilot": continue_pilot,
+        "issues": issues_text,
+        "language": lang,
+        "utm_source": (utm_source or "")[:80],
+        "utm_campaign": (utm_campaign or "")[:80],
+        "utm_content": (utm_content or "")[:80],
+    }
+    _append_jsonl(FEEDBACK_PATH, row)
+    return True, ""
 
 
 def build_summary() -> dict:

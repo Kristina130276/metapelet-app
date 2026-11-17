@@ -444,8 +444,10 @@ def budget_status():
 
 @app.route("/health", methods=["GET"])
 def health():
-    """Lightweight health check endpoint for uptime monitoring."""
-    return jsonify({"status": "ok"}), 200
+    """Health check endpoint with database diagnostics."""
+    health_data = {"status": "ok"}
+    health_data.update(pilot.get_database_health())
+    return jsonify(health_data), 200
 
 
 @app.route("/tts/check", methods=["GET"])
