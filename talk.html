@@ -401,9 +401,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         session_id: getPilotSessionId(),
-                        comfortable: liked ? 'yes' : 'no',
+                        comfortable: '',  // not asked on /talk
                         liked: liked ? 'yes' : 'no',
-                        continue_pilot: liked ? 'yes' : 'maybe',
+                        continue_pilot: '',  // not asked on /talk
                         issues: '',
                         language: profile.language || '',
                         utm_source: '',
