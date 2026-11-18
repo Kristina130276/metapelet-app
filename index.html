@@ -910,30 +910,56 @@
         }
         const utm = getPilotUtm();
         const issues = (document.getElementById("fb-issues").value || "").trim();
-        try {
-            const resp = await fetch("/pilot/feedback", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    session_id: getPilotSessionId(),
-                    comfortable: comfortable,
-                    liked: liked,
-                    continue_pilot: continuePilot,
-                    issues: issues,
-                    language: anketa.language || "",
-                    utm_source: utm.utm_source || "",
-                    utm_campaign: utm.utm_campaign || "",
-                    utm_content: utm.utm_content || ""
-                })
-            });
-            if (!resp.ok) throw new Error("feedback failed");
-            localStorage.setItem(PILOT_FEEDBACK_DONE_KEY, "1");
-            document.getElementById("submit-feedback-btn").classList.add("screen-hidden");
-            document.getElementById("feedback-thanks").classList.remove("screen-hidden");
-        } catch (e) {
-            console.error("feedback", e);
-            alert("Не удалось отправить отзыв. Попробуйте ещё раз.");
+        
+        const submitBtn = document.getElementById("submit-feedback-btn");
+        const originalText = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Отправляем...";
+        
+        const payload = {
+            session_id: getPilotSessionId(),
+            comfortable: comfortable,
+            liked: liked,
+            continue_pilot: continuePilot,
+            issues: issues,
+            language: anketa.language || "",
+            utm_source: utm.utm_source || "",
+            utm_campaign: utm.utm_campaign || "",
+            utm_content: utm.utm_content || ""
+        };
+        
+        // Try submission with automatic retry
+        let lastError = null;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+                const resp = await fetch("/pilot/feedback", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                if (resp.ok) {
+                    localStorage.setItem(PILOT_FEEDBACK_DONE_KEY, "1");
+                    submitBtn.classList.add("screen-hidden");
+                    document.getElementById("feedback-thanks").classList.remove("screen-hidden");
+                    return;
+                }
+                lastError = new Error(`HTTP ${resp.status}`);
+            } catch (e) {
+                lastError = e;
+                console.error(`feedback attempt ${attempt}:`, e);
+            }
+            
+            if (attempt < 2) {
+                // Wait 1 second before retry
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
         }
+        
+        // Both attempts failed - show error but keep form intact
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+        console.error("feedback failed after 2 attempts:", lastError);
+        alert("Не удалось отправить отзыв. Пожалуйста, попробуйте ещё раз через несколько секунд.");
     }
 
     function bindAnketaStartedTracking() {
