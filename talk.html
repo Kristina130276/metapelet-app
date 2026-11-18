@@ -395,31 +395,52 @@
         
         async function submitFeedback(liked) {
             document.getElementById('feedback-box').classList.remove('visible');
-            try {
-                await fetch('/pilot/feedback', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        session_id: getPilotSessionId(),
-                        comfortable: '',  // not asked on /talk
-                        liked: liked ? 'yes' : 'no',
-                        continue_pilot: '',  // not asked on /talk
-                        issues: '',
-                        language: profile.language || '',
-                        utm_source: '',
-                        utm_campaign: '',
-                        utm_content: ''
-                    })
-                });
-                localStorage.setItem(PILOT_FEEDBACK_DONE_KEY, '1');
-                document.getElementById('feedback-thanks-text').textContent = t('feedbackThanks');
-                document.getElementById('feedback-thanks').classList.remove('hidden');
-                setTimeout(() => {
-                    document.getElementById('feedback-thanks').classList.add('hidden');
-                }, 3000);
-            } catch (e) {
-                console.error('feedback error', e);
+            
+            const payload = {
+                session_id: getPilotSessionId(),
+                comfortable: '',  // not asked on /talk
+                liked: liked ? 'yes' : 'no',
+                continue_pilot: '',  // not asked on /talk
+                issues: '',
+                language: profile.language || '',
+                utm_source: '',
+                utm_campaign: '',
+                utm_content: ''
+            };
+            
+            // Try submission with automatic retry
+            let lastError = null;
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    const resp = await fetch('/pilot/feedback', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (resp.ok) {
+                        localStorage.setItem(PILOT_FEEDBACK_DONE_KEY, '1');
+                        document.getElementById('feedback-thanks-text').textContent = t('feedbackThanks');
+                        document.getElementById('feedback-thanks').classList.remove('hidden');
+                        setTimeout(() => {
+                            document.getElementById('feedback-thanks').classList.add('hidden');
+                        }, 3000);
+                        return;
+                    }
+                    lastError = new Error(`HTTP ${resp.status}`);
+                } catch (e) {
+                    lastError = e;
+                    console.error(`feedback attempt ${attempt}:`, e);
+                }
+                
+                if (attempt < 2) {
+                    // Wait 1 second before retry
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
             }
+            
+            // Both attempts failed - show feedback box again to allow retry
+            console.error('feedback failed after 2 attempts:', lastError);
+            document.getElementById('feedback-box').classList.add('visible');
         }
         
         function loadProfile() {

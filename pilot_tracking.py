@@ -173,6 +173,83 @@ def _get_db_connection():
     return _db_connection
 
 
+def _is_connection_alive(conn) -> bool:
+    """Check if database connection is still alive."""
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+    except Exception:
+        return False
+
+
+def _reset_connection():
+    """Close and reset the global connection."""
+    global _db_connection
+    if _db_connection is not None:
+        try:
+            _db_connection.close()
+        except Exception:
+            pass
+        _db_connection = None
+
+
+def _execute_with_retry(operation_name: str, db_operation):
+    """Execute a database operation with automatic reconnect on stale connection.
+    
+    Args:
+        operation_name: Name of the operation for logging (e.g., "record_feedback")
+        db_operation: Callable that takes a connection and performs the DB operation.
+                     Should return (success: bool, error_code: str).
+    
+    Returns:
+        tuple: (success: bool, error_code: str)
+    """
+    if not USE_DATABASE:
+        return False, "no_database"
+    
+    conn = _get_db_connection()
+    if conn is None:
+        logger.warning(f"{operation_name}: Database not available, will use file fallback")
+        return False, "database_error"
+    
+    # Try operation with existing connection
+    try:
+        return db_operation(conn)
+    except Exception as e:
+        error_str = str(e).lower()
+        # Check if this looks like a stale/closed connection error
+        is_stale = any(keyword in error_str for keyword in [
+            'closed', 'terminated', 'broken', 'lost', 'reset', 'timeout',
+            'server closed', 'connection already closed', 'no connection'
+        ])
+        
+        if not is_stale:
+            # Not a connection issue, don't retry
+            logger.error(f"{operation_name}: Database error (no retry): {type(e).__name__}")
+            return False, "database_error"
+        
+        # Connection is stale, try to reconnect and retry once
+        logger.warning(f"{operation_name}: Stale connection detected, reconnecting...")
+        _reset_connection()
+        
+        conn = _get_db_connection()
+        if conn is None:
+            logger.error(f"{operation_name}: Reconnection failed")
+            return False, "database_error"
+        
+        # Retry the operation
+        try:
+            logger.info(f"{operation_name}: Retrying after reconnect")
+            return db_operation(conn)
+        except Exception as retry_e:
+            logger.error(f"{operation_name}: Retry failed: {type(retry_e).__name__}")
+            return False, "database_error"
+
+
 def check_database_health() -> dict:
     """Check database connection health for /health endpoint.
     
@@ -385,11 +462,20 @@ def _read_feedback_from_db() -> list[dict]:
 
 
 def get_all_feedback_for_export() -> list[dict]:
-    """Get all feedback records for CSV export."""
+    """Get all feedback records for CSV export.
+    
+    Excludes test data (session_ids starting with 'ps_TEST_').
+    """
     if USE_DATABASE:
-        return _read_feedback_from_db()
+        all_feedback = _read_feedback_from_db()
     else:
-        return _read_jsonl(FEEDBACK_PATH)
+        all_feedback = _read_jsonl(FEEDBACK_PATH)
+    
+    # Filter out test sessions
+    return [
+        fb for fb in all_feedback
+        if not (fb.get("session_id") or "").startswith("ps_TEST_")
+    ]
 
 
 def admin_token_ok(token: str | None) -> bool:
@@ -421,9 +507,8 @@ def record_event(
     ts = _now_iso()
     
     if USE_DATABASE:
-        # Store in database
-        conn = _get_db_connection()
-        if conn:
+        # Try to store in database with automatic reconnect on stale connection
+        def db_insert(conn):
             try:
                 with conn.cursor() as cur:
                     cur.execute("""
@@ -439,10 +524,15 @@ def record_event(
                     ))
                 return True, ""
             except Exception as e:
-                logger.error(f"Failed to record event to database: {e}")
-                return False, "database_error"
+                logger.error(f"Failed to insert event: {type(e).__name__}")
+                raise
+        
+        success, error = _execute_with_retry("record_event", db_insert)
+        if success:
+            return True, ""
+        # Fall through to file fallback
     
-    # Fallback to file storage (either USE_DATABASE is False or connection failed)
+    # Fallback to file storage (either USE_DATABASE is False or database failed)
     row = {
         "ts": ts,
         "session_id": sid,
@@ -453,6 +543,7 @@ def record_event(
         "meta": safe_meta,
     }
     _append_jsonl(EVENTS_PATH, row)
+    logger.info(f"Event recorded to file fallback: {event}")
     return True, ""
 
 
@@ -482,9 +573,8 @@ def record_feedback(
     lang = (language or "")[:20]
     
     if USE_DATABASE:
-        # Store in database
-        conn = _get_db_connection()
-        if conn:
+        # Try to store in database with automatic reconnect on stale connection
+        def db_insert(conn):
             try:
                 with conn.cursor() as cur:
                     cur.execute("""
@@ -501,10 +591,15 @@ def record_feedback(
                     ))
                 return True, ""
             except Exception as e:
-                logger.error(f"Failed to record feedback to database: {e}")
-                return False, "database_error"
+                logger.error(f"Failed to insert feedback: {type(e).__name__}")
+                raise
+        
+        success, error = _execute_with_retry("record_feedback", db_insert)
+        if success:
+            return True, ""
+        # Fall through to file fallback
     
-    # Fallback to file storage (either USE_DATABASE is False or connection failed)
+    # Fallback to file storage (either USE_DATABASE is False or database failed)
     row = {
         "ts": ts,
         "session_id": sid,
@@ -518,16 +613,25 @@ def record_feedback(
         "utm_content": (utm_content or "")[:80],
     }
     _append_jsonl(FEEDBACK_PATH, row)
+    logger.info(f"Feedback recorded to file fallback: {sid}")
     return True, ""
 
 
 def build_summary() -> dict:
+    """Build summary of pilot data.
+    
+    Excludes test data (session_ids starting with 'ps_TEST_').
+    """
     if USE_DATABASE:
         events = _read_events_from_db()
         feedback = _read_feedback_from_db()
     else:
         events = _read_jsonl(EVENTS_PATH)
         feedback = _read_jsonl(FEEDBACK_PATH)
+
+    # Filter out test sessions
+    events = [ev for ev in events if not (ev.get("session_id") or "").startswith("ps_TEST_")]
+    feedback = [fb for fb in feedback if not (fb.get("session_id") or "").startswith("ps_TEST_")]
 
     sessions: dict[str, dict] = {}
 
