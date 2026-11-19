@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 import pilot_tracking as pilot
 import budget_guard as budget
+import tts_budget
 
 app = Flask(__name__)
 CORS(app)
@@ -25,6 +26,7 @@ if not logging.getLogger().hasHandlers():
 
 # Initialize database tables if DATABASE_URL is set
 pilot.init_database()
+tts_budget.init_database()
 
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -479,7 +481,12 @@ def chat():
 
 @app.route("/budget/status", methods=["GET"])
 def budget_status():
-    return jsonify(budget.status())
+    daily = budget.status()
+    monthly = tts_budget.get_status()
+    return jsonify({
+        "daily": daily,
+        "monthly": monthly,
+    })
 
 
 @app.route("/health", methods=["GET"])
@@ -519,12 +526,23 @@ def tts():
     voice_names = voice_cfg.get("names") or [voice_cfg.get("name", "ru-RU-Wavenet-A")]
 
     # Log without conversation content
-    print(f"TTS | LANG: {language} | LENGTH: {len(text)} chars")
+    text_len = len(text)
+    print(f"TTS | LANG: {language} | LENGTH: {text_len} chars")
 
     url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={api_key}"
     last_detail = None
+    all_tiers_exhausted = True
 
     for voice_name in voice_names:
+        # Check monthly budget before attempting
+        allowed, reason = tts_budget.check_and_reserve(voice_name, text_len)
+        if not allowed:
+            tier = tts_budget._voice_to_tier(voice_name)
+            print(f"TTS voice {voice_name} ({tier}) skipped: {reason}")
+            continue
+        
+        all_tiers_exhausted = False
+        
         payload = {
             "input": {"text": text},
             "voice": {
@@ -546,6 +564,10 @@ def tts():
                 print(f"TTS voice {voice_name} failed: {last_detail}")
                 continue
             audio_bytes = base64.b64decode(resp.json()["audioContent"])
+            
+            # Only record usage after successful response from Google
+            tts_budget.record_success(voice_name, text_len)
+            
             print(f"TTS OK ({voice_name}): {len(audio_bytes)} байт")
             resp_out = Response(audio_bytes, mimetype="audio/mpeg")
             resp_out.headers["X-TTS-Voice"] = voice_name
@@ -553,6 +575,11 @@ def tts():
         except Exception as e:
             last_detail = str(e)
             print(f"TTS voice {voice_name} failed: {e}")
+
+    # If all candidate voices were skipped due to budget, return 429
+    if all_tiers_exhausted:
+        print("TTS MONTHLY BUDGET: All tiers exhausted")
+        return jsonify({"error": "limit", "reason": "monthly_tts_cap"}), 429
 
     print(f"Ошибка Google TTS: {last_detail}")
     return jsonify({
