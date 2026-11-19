@@ -34,10 +34,20 @@ class Chirp3HDAudioConfigTest(unittest.TestCase):
         self.budget_patcher = patch('app.budget.try_consume_tts')
         self.mock_budget = self.budget_patcher.start()
         self.mock_budget.return_value = (True, None)
+        
+        # Mock tts_budget to allow all voices through
+        self.tts_budget_check_patcher = patch('app.tts_budget.check_and_reserve')
+        self.mock_tts_budget_check = self.tts_budget_check_patcher.start()
+        self.mock_tts_budget_check.return_value = (True, None)
+        
+        self.tts_budget_record_patcher = patch('app.tts_budget.record_success')
+        self.mock_tts_budget_record = self.tts_budget_record_patcher.start()
 
     def tearDown(self):
         self.anthropic_patcher.stop()
         self.budget_patcher.stop()
+        self.tts_budget_check_patcher.stop()
+        self.tts_budget_record_patcher.stop()
 
     @patch('app._google_api_key', return_value='test_api_key')
     @patch('app.http_requests.post')
