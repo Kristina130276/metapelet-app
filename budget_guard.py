@@ -18,6 +18,7 @@ DAILY_GLOBAL_REPLIES = int(os.environ.get("PILOT_DAILY_REPLIES", "300"))
 DAILY_PER_USER_REPLIES = int(os.environ.get("PILOT_DAILY_PER_USER", "40"))
 # Один IP может быть общим (семья, дневной центр) — даём запас на ~3 участников.
 DAILY_PER_IP_REPLIES = int(os.environ.get("PILOT_DAILY_PER_IP", "120"))
+PILOT_DAILY_SUMMARIES = int(os.environ.get("PILOT_DAILY_SUMMARIES", "100"))
 MAX_USER_MESSAGE_CHARS = 1000
 MAX_TTS_CHARS = 1200
 TTS_PLAYS_PER_REPLY = 4          # первое воспроизведение + повторы «Не слышно?»
@@ -33,6 +34,7 @@ _lock = threading.Lock()
 _day = None
 _global = 0
 _tts_calls = 0
+_summaries = 0
 _per_user = {}
 _per_ip = {}
 _allowed_tts = OrderedDict()   # хэш текста ответа -> оставшиеся воспроизведения
@@ -43,10 +45,10 @@ def _today():
 
 
 def _roll_day():
-    global _day, _global, _tts_calls, _per_user, _per_ip
+    global _day, _global, _tts_calls, _summaries, _per_user, _per_ip
     d = _today()
     if d != _day:
-        _day, _global, _tts_calls = d, 0, 0
+        _day, _global, _tts_calls, _summaries = d, 0, 0, 0
         _per_user, _per_ip = {}, {}
 
 
@@ -140,8 +142,20 @@ def try_consume_tts(text):
         return True, None
 
 
+def try_consume_summary():
+    """True if we can do one more summarization; reserves it immediately."""
+    with _lock:
+        _roll_day()
+        global _summaries
+        if _summaries >= PILOT_DAILY_SUMMARIES:
+            return False, "summary_limit"
+        _summaries += 1
+        return True, None
+
+
 def status():
     with _lock:
         _roll_day()
         return {"day": _day, "replies_used": _global, "replies_limit": DAILY_GLOBAL_REPLIES,
-                "tts_used": _tts_calls, "tts_limit": DAILY_TTS_CALLS}
+                "tts_used": _tts_calls, "tts_limit": DAILY_TTS_CALLS,
+                "summaries_used": _summaries, "summaries_limit": PILOT_DAILY_SUMMARIES}
