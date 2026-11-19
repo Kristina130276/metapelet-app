@@ -41,7 +41,8 @@ _db_connection: Optional[object] = None
 
 # Memory constraints
 MAX_SUMMARY_CHARS = 800
-UPDATE_EVERY_N_MESSAGES = 6
+UPDATE_EVERY_N_MESSAGES = 4  # Trigger summarization after 4 user messages
+MAX_BUFFER_MESSAGES = 30  # Cap on unsummarized message buffer
 
 
 def _get_db_connection():

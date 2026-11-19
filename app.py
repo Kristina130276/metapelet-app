@@ -42,8 +42,10 @@ conversations = {}
 MAX_MESSAGES = 10
 GREETING_TRIGGER = "__greeting__"
 
-# Track when to update memory summary
-_last_summarization = {}  # user_id -> message count at last summarization
+# Track when to update memory summary (independent of trimmed history)
+_user_message_counters = {}  # user_id -> count of user messages since last summary
+_unsummarized_buffers = {}  # user_id -> list of unsummarized messages (user + assistant)
+_summarization_in_progress = set()  # user_ids currently being summarized (concurrency guard)
 
 _EMOJI_RE = re.compile(
     "["
@@ -285,6 +287,35 @@ def trim_history(user_id: str):
         conversations[user_id] = conversations[user_id][-MAX_MESSAGES:]
 
 
+def _add_to_unsummarized_buffer(user_id: str, role: str, content: str):
+    """Add a message to the unsummarized buffer (capped at MAX_BUFFER_MESSAGES)."""
+    if user_id not in _unsummarized_buffers:
+        _unsummarized_buffers[user_id] = []
+    
+    _unsummarized_buffers[user_id].append({"role": role, "content": content})
+    
+    # Cap buffer size
+    if len(_unsummarized_buffers[user_id]) > conversation_memory.MAX_BUFFER_MESSAGES:
+        _unsummarized_buffers[user_id] = _unsummarized_buffers[user_id][-conversation_memory.MAX_BUFFER_MESSAGES:]
+
+
+def _increment_user_message_counter(user_id: str):
+    """Increment user message counter (for triggering summarization)."""
+    _user_message_counters[user_id] = _user_message_counters.get(user_id, 0) + 1
+
+
+def _should_summarize(user_id: str) -> bool:
+    """Check if we should trigger summarization for this user."""
+    count = _user_message_counters.get(user_id, 0)
+    return count >= conversation_memory.UPDATE_EVERY_N_MESSAGES
+
+
+def _clear_summarization_state(user_id: str):
+    """Clear counter and buffer after successful summarization."""
+    _user_message_counters[user_id] = 0
+    _unsummarized_buffers[user_id] = []
+
+
 def _summarize_conversation_async(user_id: str, language: str):
     """
     Update memory summary with recent conversation (non-blocking, best-effort).
@@ -294,81 +325,92 @@ def _summarize_conversation_async(user_id: str, language: str):
     
     def do_summarize():
         try:
-            history = get_history(user_id)
-            user_msg_count = conversation_memory.count_user_messages(history)
-            
-            # Skip if not enough messages yet
-            if user_msg_count < conversation_memory.UPDATE_EVERY_N_MESSAGES:
+            # Concurrency guard: skip if already summarizing for this user
+            if user_id in _summarization_in_progress:
+                logging.info(f"Summarization already in progress for user, skipping")
                 return
             
-            # Skip if we just summarized recently
-            last_count = _last_summarization.get(user_id, 0)
-            if user_msg_count - last_count < conversation_memory.UPDATE_EVERY_N_MESSAGES:
-                return
+            _summarization_in_progress.add(user_id)
             
-            # Get existing memory
-            existing_summary = conversation_memory.get_memory(user_id) or ""
-            
-            # Build summarization prompt
-            recent_msgs = []
-            for msg in history[-20:]:  # Last 20 messages max
-                role = msg.get("role", "")
-                content = msg.get("content", "")
-                if content and content != "[начало разговора]":
-                    recent_msgs.append(f"{role}: {content}")
-            
-            if not recent_msgs:
-                return
-            
-            recent_text = "\n".join(recent_msgs)
-            
-            # Language-specific summarization prompts
-            prompts = {
-                "ru-RU": (
-                    f"Предыдущая память о пользователе:\n{existing_summary}\n\n"
-                    f"Недавние сообщения:\n{recent_text}\n\n"
-                    "Обнови краткую память (до 800 символов): имена близких, события, "
-                    "здоровье (только как сказал пользователь), настроение, планы, интересы. "
-                    "Только факты. Без домыслов. Без пересказа диалога."
-                ),
-                "he-IL": (
-                    f"זיכרון קודם על המשתמש:\n{existing_summary}\n\n"
-                    f"הודעות אחרונות:\n{recent_text}\n\n"
-                    "עדכן זיכרון תמציתי (עד 800 תווים): שמות של קרובים, אירועים, "
-                    "בריאות (רק כפי שהמשתמש אמר), מצב רוח, תוכניות, תחומי עניין. "
-                    "רק עובדות. ללא השערות. ללא תמלול של הדיאלוג."
-                ),
-                "en-US": (
-                    f"Previous memory about user:\n{existing_summary}\n\n"
-                    f"Recent messages:\n{recent_text}\n\n"
-                    "Update brief memory (up to 800 chars): family names, events, "
-                    "health (only as user said), mood, plans, interests. "
-                    "Facts only. No speculation. No dialogue transcript."
-                ),
-            }
-            
-            prompt = prompts.get(language, prompts["ru-RU"])
-            
-            # Call Claude Haiku for summarization
             try:
-                response = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=300,
-                    messages=[{"role": "user", "content": prompt}]
-                )
+                # Check budget before summarizing
+                allowed, why = budget.try_consume_summary()
+                if not allowed:
+                    logging.info(f"Summarization skipped: {why}")
+                    return
                 
-                new_summary = response.content[0].text.strip()
+                # Get unsummarized messages from buffer
+                buffer = _unsummarized_buffers.get(user_id, [])
+                if not buffer:
+                    return
                 
-                # Store updated summary
-                if new_summary:
-                    conversation_memory.store_memory(user_id, new_summary)
-                    _last_summarization[user_id] = user_msg_count
-                    # Log only success, never content
-                    logging.info(f"Memory updated for user (len={len(new_summary)})")
+                # Get existing memory
+                existing_summary = conversation_memory.get_memory(user_id) or ""
                 
-            except Exception as e:
-                # Log only exception type, never content
-                logging.warning(f"Memory summarization failed: {type(e).__name__}")
+                # Build summarization prompt from buffer
+                recent_msgs = []
+                for msg in buffer:
+                    role = msg.get("role", "")
+                    content = msg.get("content", "")
+                    if content and content != "[начало разговора]":
+                        recent_msgs.append(f"{role}: {content}")
+                
+                if not recent_msgs:
+                    return
+                
+                recent_text = "\n".join(recent_msgs)
+                
+                # Language-specific summarization prompts
+                prompts = {
+                    "ru-RU": (
+                        f"Предыдущая память о пользователе:\n{existing_summary}\n\n"
+                        f"Недавние сообщения:\n{recent_text}\n\n"
+                        "Обнови краткую память (до 800 символов): имена близких, события, "
+                        "здоровье (только как сказал пользователь), настроение, планы, интересы. "
+                        "Только факты. Без домыслов. Без пересказа диалога."
+                    ),
+                    "he-IL": (
+                        f"זיכרון קודם על המשתמש:\n{existing_summary}\n\n"
+                        f"הודעות אחרונות:\n{recent_text}\n\n"
+                        "עדכן זיכרון תמציתי (עד 800 תווים): שמות של קרובים, אירועים, "
+                        "בריאות (רק כפי שהמשתמש אמר), מצב רוח, תוכניות, תחומי עניין. "
+                        "רק עובדות. ללא השערות. ללא תמלול של הדיאלוג."
+                    ),
+                    "en-US": (
+                        f"Previous memory about user:\n{existing_summary}\n\n"
+                        f"Recent messages:\n{recent_text}\n\n"
+                        "Update brief memory (up to 800 chars): family names, events, "
+                        "health (only as user said), mood, plans, interests. "
+                        "Facts only. No speculation. No dialogue transcript."
+                    ),
+                }
+                
+                prompt = prompts.get(language, prompts["ru-RU"])
+                
+                # Call Claude Haiku for summarization
+                try:
+                    response = client.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=300,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                    
+                    new_summary = response.content[0].text.strip()
+                    
+                    # Store updated summary
+                    if new_summary:
+                        conversation_memory.store_memory(user_id, new_summary)
+                        _clear_summarization_state(user_id)
+                        # Log only success, never content
+                        logging.info(f"Memory updated for user (len={len(new_summary)})")
+                    
+                except Exception as e:
+                    # Log only exception type, never content
+                    logging.warning(f"Memory summarization failed: {type(e).__name__}")
+            
+            finally:
+                # Always remove from in-progress set
+                _summarization_in_progress.discard(user_id)
         
         except Exception as e:
             # Catch-all: log type only
@@ -607,14 +649,22 @@ def chat():
 
     history = get_history(user_id)
     
-    # At session start, check if there's unsummarized history from before
+    # At session start, check if there's unsummarized buffer from before
     if is_greeting:
-        user_msg_count = conversation_memory.count_user_messages(history)
-        if user_msg_count > 0:
+        buffer = _unsummarized_buffers.get(user_id, [])
+        has_unsummarized_user_msgs = any(
+            msg.get("role") == "user" and msg.get("content") != "[начало разговора]"
+            for msg in buffer
+        )
+        if has_unsummarized_user_msgs:
             _summarize_conversation_async(user_id, language)
     
     if not is_greeting:
         history.append({"role": "user", "content": user_message})
+        # Add to unsummarized buffer (independent of trim_history)
+        _add_to_unsummarized_buffer(user_id, "user", user_message)
+        # Increment user message counter
+        _increment_user_message_counter(user_id)
     else:
         history.append({"role": "user", "content": "[начало разговора]"})
 
@@ -631,8 +681,12 @@ def chat():
         history.append({"role": "assistant", "content": reply})
         trim_history(user_id)
         
-        # Update memory summary in background (non-blocking, best-effort)
+        # Add assistant reply to unsummarized buffer
         if not is_greeting:
+            _add_to_unsummarized_buffer(user_id, "assistant", reply)
+        
+        # Trigger summarization if threshold reached (non-blocking, best-effort)
+        if not is_greeting and _should_summarize(user_id):
             _summarize_conversation_async(user_id, language)
 
         return jsonify({"reply": reply})
@@ -773,9 +827,12 @@ def memory_forget():
     if not success:
         return jsonify({"ok": False, "error": error}), 400
     
-    # Also clear last summarization tracking
-    if user_id in _last_summarization:
-        del _last_summarization[user_id]
+    # Also clear summarization state
+    if user_id in _user_message_counters:
+        del _user_message_counters[user_id]
+    if user_id in _unsummarized_buffers:
+        del _unsummarized_buffers[user_id]
+    _summarization_in_progress.discard(user_id)
     
     return jsonify({"ok": True})
 

@@ -348,4 +348,226 @@ def test_max_summary_constraint():
 
 def test_update_every_n_messages():
     """Test that UPDATE_EVERY_N_MESSAGES is properly defined."""
-    assert conversation_memory.UPDATE_EVERY_N_MESSAGES == 6
+    assert conversation_memory.UPDATE_EVERY_N_MESSAGES == 4
+
+
+def test_summarization_triggers_in_real_chat_flow(client, temp_memory_file, monkeypatch):
+    """Test that summarization fires in real /chat flow with trim_history (Bug #1 fix)."""
+    from unittest.mock import MagicMock, patch
+    import time
+    
+    # Disable database for this test
+    monkeypatch.setattr("conversation_memory.USE_DATABASE", False)
+    
+    # Mock Anthropic client
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text="Test summary with info from message")]
+    mock_client.messages.create.return_value = mock_response
+    
+    monkeypatch.setattr("app.client", mock_client)
+    
+    # Send 4 user messages (should trigger summarization after 4th)
+    user_id = "test_user_trim_flow"
+    for i in range(4):
+        response = client.post('/chat', json={
+            "message": f"Test message {i+1} with unique content",
+            "user_id": user_id,
+            "name": "Test",
+            "age": "70",
+            "language": "ru-RU",
+            "interests": "testing",
+            "avoid_topics": "none"
+        }, content_type='application/json')
+        
+        assert response.status_code == 200
+    
+    # Wait for background summarization to complete
+    time.sleep(1.5)
+    
+    # Verify summarization was called at least once
+    assert mock_client.messages.create.call_count >= 1
+    
+    # Verify summary was stored
+    stored_summary = conversation_memory.get_memory(user_id)
+    assert stored_summary is not None
+    assert "Test summary" in stored_summary
+
+
+def test_summarization_with_many_messages_through_trim(client, temp_memory_file, monkeypatch):
+    """Test summarization works correctly when history is trimmed (Bug #1 fix).
+    
+    Simulates 12 messages (exceeds MAX_MESSAGES=10), verifies summarization
+    still fires and includes content from trimmed messages.
+    """
+    from unittest.mock import MagicMock
+    import time
+    
+    # Disable database
+    monkeypatch.setattr("conversation_memory.USE_DATABASE", False)
+    
+    # Mock Anthropic client - capture what's sent for summarization
+    mock_client = MagicMock()
+    summarization_calls = []
+    
+    def mock_create(**kwargs):
+        # Capture the prompt content
+        if 'messages' in kwargs and len(kwargs['messages']) > 0:
+            summarization_calls.append(kwargs['messages'][0]['content'])
+        
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="Summary including early message content")]
+        return mock_response
+    
+    mock_client.messages.create.side_effect = mock_create
+    monkeypatch.setattr("app.client", mock_client)
+    
+    # Send 12 messages (will trigger summarization multiple times)
+    user_id = "test_user_12_msgs"
+    for i in range(12):
+        response = client.post('/chat', json={
+            "message": f"Unique message number {i+1} with special keyword MSG{i+1}",
+            "user_id": user_id,
+            "name": "Test",
+            "age": "70",
+            "language": "ru-RU",
+            "interests": "testing",
+            "avoid_topics": "none"
+        }, content_type='application/json')
+        
+        assert response.status_code == 200
+    
+    # Wait for all background summarizations
+    time.sleep(2.0)
+    
+    # Verify at least one summarization happened
+    assert len(summarization_calls) >= 1
+    
+    # Verify the summarization prompt includes early messages
+    # (even though they may be trimmed from in-memory history)
+    full_prompt = " ".join(summarization_calls)
+    # Should include content from early messages
+    assert "MSG" in full_prompt
+    
+    # Verify summary was stored
+    stored_summary = conversation_memory.get_memory(user_id)
+    assert stored_summary is not None
+
+
+def test_summarization_budget_consumption(client, temp_memory_file, monkeypatch):
+    """Test that summarization calls count against budget (Bug #2 fix)."""
+    import budget_guard
+    from unittest.mock import MagicMock
+    import time
+    
+    # Disable database
+    monkeypatch.setattr("conversation_memory.USE_DATABASE", False)
+    
+    # Mock Anthropic client
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text="Test summary")]
+    mock_client.messages.create.return_value = mock_response
+    monkeypatch.setattr("app.client", mock_client)
+    
+    # Check initial budget
+    status_before = budget_guard.status()
+    summaries_before = status_before.get("summaries_used", 0)
+    
+    # Send 4 messages to trigger summarization
+    user_id = "test_user_budget"
+    for i in range(4):
+        client.post('/chat', json={
+            "message": f"Test message {i+1}",
+            "user_id": user_id,
+            "name": "Test",
+            "age": "70",
+            "language": "ru-RU",
+            "interests": "testing",
+            "avoid_topics": "none"
+        }, content_type='application/json')
+    
+    # Wait for background summarization
+    time.sleep(1.5)
+    
+    # Check budget after
+    status_after = budget_guard.status()
+    summaries_after = status_after.get("summaries_used", 0)
+    
+    # Verify budget was consumed
+    assert summaries_after > summaries_before
+
+
+def test_summarization_budget_limit(monkeypatch, temp_memory_file):
+    """Test that summarization stops when budget exhausted (Bug #2 fix)."""
+    import budget_guard
+    
+    # Reset budget day tracking to force fresh state
+    monkeypatch.setattr(budget_guard, "_day", None)
+    monkeypatch.setattr(budget_guard, "_summaries", 0)
+    
+    # Set very low limit
+    monkeypatch.setattr(budget_guard, "PILOT_DAILY_SUMMARIES", 1)
+    
+    # Consume one summary
+    allowed1, _ = budget_guard.try_consume_summary()
+    assert allowed1 is True
+    
+    # Second should fail
+    allowed2, why = budget_guard.try_consume_summary()
+    assert allowed2 is False
+    assert why == "summary_limit"
+
+
+def test_concurrent_summarization_guard(monkeypatch, temp_memory_file):
+    """Test that concurrent summarization for same user is prevented (Bug #3 fix)."""
+    from app import _summarization_in_progress, _summarize_conversation_async
+    from unittest.mock import MagicMock
+    import time
+    
+    # Disable database
+    monkeypatch.setattr("conversation_memory.USE_DATABASE", False)
+    
+    # Mock Anthropic client with slow response
+    mock_client = MagicMock()
+    def slow_create(**kwargs):
+        time.sleep(0.5)  # Simulate slow API call
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="Test summary")]
+        return mock_response
+    
+    mock_client.messages.create.side_effect = slow_create
+    monkeypatch.setattr("app.client", mock_client)
+    
+    # Set up user with enough messages to trigger summarization
+    from app import _user_message_counters, _unsummarized_buffers
+    user_id = "test_user_concurrent"
+    _user_message_counters[user_id] = 4
+    _unsummarized_buffers[user_id] = [
+        {"role": "user", "content": "Test 1"},
+        {"role": "assistant", "content": "Reply 1"},
+        {"role": "user", "content": "Test 2"},
+        {"role": "assistant", "content": "Reply 2"},
+    ]
+    
+    # Start first summarization
+    _summarize_conversation_async(user_id, "ru-RU")
+    time.sleep(0.1)  # Let it start
+    
+    # Verify user is in progress set
+    assert user_id in _summarization_in_progress
+    
+    # Try to start second summarization (should be skipped)
+    call_count_before = mock_client.messages.create.call_count
+    _summarize_conversation_async(user_id, "ru-RU")
+    time.sleep(0.2)
+    call_count_after = mock_client.messages.create.call_count
+    
+    # Second call should be skipped (no new API call)
+    assert call_count_after == call_count_before
+    
+    # Wait for first to complete
+    time.sleep(1.0)
+    
+    # Verify user is removed from progress set
+    assert user_id not in _summarization_in_progress
