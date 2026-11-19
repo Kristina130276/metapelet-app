@@ -302,11 +302,12 @@ class TTSBudgetDatabaseTest(unittest.TestCase):
         self.assertIn("ON CONFLICT", sql.upper())
         self.assertIn("DO UPDATE", sql.upper())
 
-    @patch('tts_budget._get_db_connection')
-    def test_db_mode_falls_back_to_file_on_error(self, mock_get_conn):
+    @patch('tts_budget._execute_with_retry')
+    def test_db_mode_falls_back_to_file_on_error(self, mock_retry):
         """Test that database errors fall back to file mode."""
         tts_budget.USE_DATABASE = True
-        mock_get_conn.return_value = None
+        # Simulate DB read failure
+        mock_retry.return_value = (False, "database_error")
         
         # Should fall back to file
         allowed, reason = tts_budget.check_and_reserve("ru-RU-Wavenet-A", 100)
@@ -317,6 +318,76 @@ class TTSBudgetDatabaseTest(unittest.TestCase):
         allowed_chirp, reason_chirp = tts_budget.check_and_reserve("ru-RU-Chirp3-HD-Kore", 100)
         self.assertFalse(allowed_chirp)
         self.assertEqual(reason_chirp, "degraded_mode")
+
+    @patch('tts_budget._reset_connection')
+    @patch('tts_budget._get_db_connection')
+    def test_stale_connection_retry_succeeds(self, mock_get_conn, mock_reset):
+        """Test that stale connection error triggers retry and succeeds."""
+        tts_budget.USE_DATABASE = True
+        
+        # Set up real usage in DB
+        month = tts_budget._current_month()
+        real_usage = {"chirp3hd": 50000, "neural2": 30000, "wavenet_standard": 100000}
+        
+        # First connection fails with stale error, second succeeds
+        mock_conn_1 = MagicMock()
+        mock_cursor_1 = MagicMock()
+        mock_conn_1.cursor.return_value.__enter__.return_value = mock_cursor_1
+        mock_cursor_1.execute.side_effect = Exception("connection closed")
+        
+        mock_conn_2 = MagicMock()
+        mock_cursor_2 = MagicMock()
+        mock_conn_2.cursor.return_value.__enter__.return_value = mock_cursor_2
+        mock_cursor_2.fetchone.return_value = (
+            real_usage["chirp3hd"],
+            real_usage["neural2"],
+            real_usage["wavenet_standard"]
+        )
+        
+        # First call gets stale conn, retry gets good conn
+        mock_get_conn.side_effect = [mock_conn_1, mock_conn_2]
+        
+        # Should use real usage after retry
+        allowed, reason = tts_budget.check_and_reserve("ru-RU-Chirp3-HD-Kore", 100)
+        self.assertTrue(allowed)
+        self.assertEqual(reason, "")
+        
+        # Verify retry happened
+        self.assertTrue(mock_reset.called)
+        self.assertTrue(mock_cursor_2.execute.called)
+
+    @patch('tts_budget._reset_connection')
+    @patch('tts_budget._get_db_connection')
+    def test_stale_connection_retry_fails_uses_degraded(self, mock_get_conn, mock_reset):
+        """Test that when retry fails, premium tiers are blocked."""
+        tts_budget.USE_DATABASE = True
+        
+        # Both connection attempts fail
+        mock_conn_1 = MagicMock()
+        mock_cursor_1 = MagicMock()
+        mock_conn_1.cursor.return_value.__enter__.return_value = mock_cursor_1
+        mock_cursor_1.execute.side_effect = Exception("connection terminated")
+        
+        # Second connection attempt returns None (can't reconnect)
+        mock_get_conn.side_effect = [mock_conn_1, None]
+        
+        # Premium tiers should be blocked (degraded mode)
+        allowed_chirp, reason_chirp = tts_budget.check_and_reserve("ru-RU-Chirp3-HD-Kore", 100)
+        self.assertFalse(allowed_chirp)
+        self.assertEqual(reason_chirp, "degraded_mode")
+        
+        # Reset mocks for second check
+        mock_get_conn.side_effect = [mock_conn_1, None]
+        
+        allowed_neural, reason_neural = tts_budget.check_and_reserve("en-US-Neural2-F", 100)
+        self.assertFalse(allowed_neural)
+        self.assertEqual(reason_neural, "degraded_mode")
+        
+        # Standard tier should work (uses file fallback)
+        mock_get_conn.side_effect = [mock_conn_1, None]
+        allowed_wavenet, reason_wavenet = tts_budget.check_and_reserve("ru-RU-Wavenet-A", 100)
+        self.assertTrue(allowed_wavenet)
+        self.assertEqual(reason_wavenet, "")
 
 
 if __name__ == "__main__":

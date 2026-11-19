@@ -210,30 +210,35 @@ def _increment_db(month: str, tier: str, chars: int) -> tuple[bool, str]:
     return success, error
 
 
-def _get_db_usage(month: str) -> dict[str, int]:
-    """Get current usage from database."""
-    conn = _get_db_connection()
-    if not conn:
-        return {"chirp3hd": 0, "neural2": 0, "wavenet_standard": 0}
+def _get_db_usage(month: str) -> dict[str, int] | None:
+    """Get current usage from database.
     
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT chirp3hd_used, neural2_used, wavenet_standard_used
-                FROM tts_monthly_budget
-                WHERE month = %s
-            """, (month,))
-            row = cur.fetchone()
-            if row:
-                return {
-                    "chirp3hd": row[0],
-                    "neural2": row[1],
-                    "wavenet_standard": row[2],
-                }
-            return {"chirp3hd": 0, "neural2": 0, "wavenet_standard": 0}
-    except Exception as e:
-        logger.error(f"Failed to get TTS usage from DB: {type(e).__name__}")
-        return {"chirp3hd": 0, "neural2": 0, "wavenet_standard": 0}
+    Returns usage dict on success, None on failure (caller must use degraded mode).
+    """
+    def db_read(conn):
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT chirp3hd_used, neural2_used, wavenet_standard_used
+                    FROM tts_monthly_budget
+                    WHERE month = %s
+                """, (month,))
+                row = cur.fetchone()
+                if row:
+                    return True, {
+                        "chirp3hd": row[0],
+                        "neural2": row[1],
+                        "wavenet_standard": row[2],
+                    }
+                return True, {"chirp3hd": 0, "neural2": 0, "wavenet_standard": 0}
+        except Exception as e:
+            logger.error(f"Failed to get TTS usage from DB: {type(e).__name__}")
+            raise
+    
+    success, result = _execute_with_retry("get_tts_usage", db_read)
+    if success:
+        return result
+    return None
 
 
 def check_and_reserve(voice_name: str, text_length: int) -> tuple[bool, str]:
@@ -247,18 +252,14 @@ def check_and_reserve(voice_name: str, text_length: int) -> tuple[bool, str]:
     cap = _cap_for_tier(tier)
     month = _current_month()
     
-    db_available = False
+    usage = None
     if USE_DATABASE:
-        conn = _get_db_connection()
-        if conn is not None:
-            db_available = True
-            usage = _get_db_usage(month)
-        else:
-            # DB configured but unavailable - fall back to file with conservative mode
-            logger.warning(f"TTS budget: Database unavailable, using degraded mode")
-            db_available = False
+        usage = _get_db_usage(month)
+        if usage is None:
+            # DB configured but read failed - fall back to file with conservative mode
+            logger.warning(f"TTS budget: Database read failed, using degraded mode")
     
-    if not db_available:
+    if usage is None:
         # File fallback: conservative mode - skip premium tiers
         with _lock:
             global _file_budget
@@ -316,9 +317,11 @@ def get_status() -> dict:
     """
     month = _current_month()
     
+    usage = None
     if USE_DATABASE:
         usage = _get_db_usage(month)
-    else:
+    
+    if usage is None:
         with _lock:
             global _file_budget
             if not _file_budget:
