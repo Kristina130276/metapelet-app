@@ -543,6 +543,17 @@ def tts():
         
         all_tiers_exhausted = False
         
+        # Build audioConfig per voice: Chirp3-HD does not support pitch parameter
+        audio_config = {
+            "audioEncoding": "MP3",
+            "speakingRate": voice_cfg["speakingRate"],
+            "volumeGainDb": 1.0,
+        }
+        
+        # Chirp 3 HD voices do not support pitch; omit it for those voices
+        if "Chirp3-HD" not in voice_name:
+            audio_config["pitch"] = voice_cfg["pitch"]
+        
         payload = {
             "input": {"text": text},
             "voice": {
@@ -550,12 +561,7 @@ def tts():
                 "name": voice_name,
                 "ssmlGender": voice_cfg["ssmlGender"],
             },
-            "audioConfig": {
-                "audioEncoding": "MP3",
-                "speakingRate": voice_cfg["speakingRate"],
-                "pitch": voice_cfg["pitch"],
-                "volumeGainDb": 1.0,
-            },
+            "audioConfig": audio_config,
         }
         try:
             resp = http_requests.post(url, json=payload, timeout=15)
