@@ -228,6 +228,61 @@
         
         .hidden { display: none !important; }
         
+        .settings-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .settings-modal.visible {
+            display: flex;
+        }
+        
+        .settings-content {
+            background: white;
+            border-radius: 20px;
+            padding: 32px 24px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+        
+        .settings-title {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: #2d3436;
+        }
+        
+        .btn-setting {
+            width: 100%;
+            font-size: 1.5rem;
+            font-weight: 600;
+            padding: 20px 16px;
+            border-radius: 16px;
+            border: 3px solid #757575;
+            background: white;
+            cursor: pointer;
+            margin-bottom: 16px;
+        }
+        
+        .btn-setting.danger {
+            border-color: #e53935;
+            color: #e53935;
+        }
+        
+        .btn-setting.danger:active {
+            background: #e53935;
+            color: white;
+        }
+        
         @media (max-width: 500px) {
             .greeting { font-size: 2rem; }
             .status { font-size: 1.5rem; }
@@ -266,6 +321,14 @@
         
         <div class="feedback-box hidden" id="feedback-thanks">
             <div class="feedback-thanks" id="feedback-thanks-text"></div>
+        </div>
+    </div>
+    
+    <div class="settings-modal" id="settings-modal">
+        <div class="settings-content">
+            <div class="settings-title" id="settings-title"></div>
+            <button type="button" class="btn-setting danger" id="forget-memory-btn"></button>
+            <button type="button" class="btn-setting" id="close-settings-btn"></button>
         </div>
     </div>
     
@@ -310,7 +373,12 @@
                 limitReached: 'На сегодня лимит бесплатного тестирования исчерпан. Возвращайтесь завтра.',
                 unknownError: 'Что-то пошло не так. Попробуйте снова.',
                 feedbackQuestion: 'Понравилось?',
-                feedbackThanks: 'Спасибо!'
+                feedbackThanks: 'Спасибо!',
+                settingsTitle: 'Настройки',
+                forgetMemory: 'Стереть память',
+                forgetConfirm: 'Удалить все воспоминания о прошлых разговорах?',
+                memoryDeleted: 'Память удалена',
+                closeSettings: 'Закрыть'
             },
             'he-IL': {
                 noSetup: 'ההגדרה לא הושלמה',
@@ -330,7 +398,12 @@
                 limitReached: '.מכסת הבדיקה החינמית להיום הסתיימה. חזור מחר',
                 unknownError: '.משהו השתבש. נסה שוב',
                 feedbackQuestion: '?נהנית',
-                feedbackThanks: '!תודה'
+                feedbackThanks: '!תודה',
+                settingsTitle: 'הגדרות',
+                forgetMemory: 'מחק זיכרון',
+                forgetConfirm: '?למחוק את כל הזיכרונות משיחות קודמות',
+                memoryDeleted: 'הזיכרון נמחק',
+                closeSettings: 'סגור'
             },
             'en-US': {
                 noSetup: 'Setup not complete',
@@ -350,7 +423,12 @@
                 limitReached: 'Today\'s free testing limit has been reached. Please come back tomorrow.',
                 unknownError: 'Something went wrong. Try again.',
                 feedbackQuestion: 'Did you like it?',
-                feedbackThanks: 'Thank you!'
+                feedbackThanks: 'Thank you!',
+                settingsTitle: 'Settings',
+                forgetMemory: 'Forget Memory',
+                forgetConfirm: 'Delete all memories from past conversations?',
+                memoryDeleted: 'Memory deleted',
+                closeSettings: 'Close'
             }
         };
         
@@ -805,14 +883,48 @@
         document.getElementById('feedback-yes').addEventListener('click', () => submitFeedback(true));
         document.getElementById('feedback-no').addEventListener('click', () => submitFeedback(false));
         
+        // Settings modal functions
+        function showSettingsModal() {
+            document.getElementById('settings-title').textContent = t('settingsTitle');
+            document.getElementById('forget-memory-btn').textContent = t('forgetMemory');
+            document.getElementById('close-settings-btn').textContent = t('closeSettings');
+            document.getElementById('settings-modal').classList.add('visible');
+        }
+        
+        function hideSettingsModal() {
+            document.getElementById('settings-modal').classList.remove('visible');
+        }
+        
+        async function forgetMemory() {
+            if (!confirm(t('forgetConfirm'))) {
+                return;
+            }
+            
+            try {
+                const resp = await fetch('/memory/forget', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId })
+                });
+                
+                if (resp.ok) {
+                    alert(t('memoryDeleted'));
+                    hideSettingsModal();
+                } else {
+                    alert(t('unknownError'));
+                }
+            } catch (e) {
+                console.error('Forget memory error:', e);
+                alert(t('networkError'));
+            }
+        }
+        
         // Long press on settings button
         let settingsLongPressTimer = null;
         document.getElementById('settings-btn').addEventListener('touchstart', (e) => {
             e.preventDefault();
             settingsLongPressTimer = setTimeout(() => {
-                if (confirm(t('goToSetup') + '?')) {
-                    window.location.href = '/setup';
-                }
+                showSettingsModal();
             }, 2000);
         });
         document.getElementById('settings-btn').addEventListener('touchend', () => {
@@ -821,6 +933,12 @@
                 settingsLongPressTimer = null;
             }
         });
+        document.getElementById('settings-btn').addEventListener('click', () => {
+            showSettingsModal();
+        });
+        
+        document.getElementById('forget-memory-btn').addEventListener('click', forgetMemory);
+        document.getElementById('close-settings-btn').addEventListener('click', hideSettingsModal);
         
         // Initialize
         profile = loadProfile();

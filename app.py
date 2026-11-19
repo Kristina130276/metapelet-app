@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO)
 import pilot_tracking as pilot
 import budget_guard as budget
 import tts_budget
+import conversation_memory
 
 app = Flask(__name__)
 CORS(app)
@@ -27,6 +28,7 @@ if not logging.getLogger().hasHandlers():
 # Initialize database tables if DATABASE_URL is set
 pilot.init_database()
 tts_budget.init_database()
+conversation_memory.init_database()
 
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -39,6 +41,9 @@ PROFILE_FILES = {
 conversations = {}
 MAX_MESSAGES = 10
 GREETING_TRIGGER = "__greeting__"
+
+# Track when to update memory summary
+_last_summarization = {}  # user_id -> message count at last summarization
 
 _EMOJI_RE = re.compile(
     "["
@@ -184,6 +189,51 @@ def _build_anketa_block(interests: str, avoid_topics: str) -> str:
     return "[Профиль из анкеты пользователя]\n" + "\n".join(parts)
 
 
+def _build_memory_block(summary: str, language: str) -> str:
+    """Build memory block for system prompt from stored summary."""
+    if not summary or not summary.strip():
+        return ""
+    
+    # Language-specific headers
+    headers = {
+        "ru-RU": "Что ты помнишь о собеседнике из прошлых разговоров:",
+        "he-IL": "מה אתה זוכר על המשתמש משיחות קודמות:",
+        "en-US": "What you remember about this person from past conversations:",
+    }
+    header = headers.get(language, headers["ru-RU"])
+    
+    # Instructions for using memory
+    instructions = {
+        "ru-RU": (
+            "\n\nИспользуй эту память естественно и тепло:\n"
+            "- Можешь один раз за ответ мягко вспомнить что-то из памяти\n"
+            "- При '[начало разговора]' можешь спросить о чём-то из памяти\n"
+            "- НИКОГДА не выдумывай воспоминания\n"
+            "- НИКОГДА не перечисляй всё подряд\n"
+            "- Если не уверен — не утверждай, что помнишь"
+        ),
+        "he-IL": (
+            "\n\nהשתמש בזיכרון הזה באופן טבעי וחם:\n"
+            "- אתה יכול לזכור משהו מהזיכרון פעם אחת בתשובה\n"
+            "- ב-'[начало разговора]' אתה יכול לשאול על משהו מהזיכרון\n"
+            "- לעולם אל תמציא זיכרונות\n"
+            "- לעולם אל תמנה הכל\n"
+            "- אם אתה לא בטוח - אל תטען שאתה זוכר"
+        ),
+        "en-US": (
+            "\n\nUse this memory naturally and warmly:\n"
+            "- You may gently recall something from memory once per reply\n"
+            "- At '[начало разговора]' you may ask about something from memory\n"
+            "- NEVER invent memories\n"
+            "- NEVER recite the whole list\n"
+            "- If unsure, don't claim to remember"
+        ),
+    }
+    instruction = instructions.get(language, instructions["ru-RU"])
+    
+    return f"[{header}]\n{summary.strip()}{instruction}"
+
+
 def build_system_prompt(
     name: str,
     age: str,
@@ -191,6 +241,7 @@ def build_system_prompt(
     profile_id=None,
     interests: str = "",
     avoid_topics: str = "",
+    user_id: str = "",
 ) -> str:
     user_name = (name or "").strip() or "дорогой человек"
     user_age = (age or "").strip() if age else ""
@@ -201,6 +252,14 @@ def build_system_prompt(
         age_line=age_line,
         language_line=_language_instruction(language or "ru-RU"),
     )
+
+    # Add memory from past conversations (if exists)
+    if user_id:
+        memory_summary = conversation_memory.get_memory(user_id)
+        if memory_summary:
+            memory_block = _build_memory_block(memory_summary, language)
+            if memory_block:
+                prompt = prompt + "\n\n" + memory_block
 
     profile_key = str(profile_id).strip().lower() if profile_id else ""
     profile_file = PROFILE_FILES.get(profile_key) if profile_key else None
@@ -224,6 +283,100 @@ def get_history(user_id: str) -> list:
 def trim_history(user_id: str):
     if len(conversations[user_id]) > MAX_MESSAGES:
         conversations[user_id] = conversations[user_id][-MAX_MESSAGES:]
+
+
+def _summarize_conversation_async(user_id: str, language: str):
+    """
+    Update memory summary with recent conversation (non-blocking, best-effort).
+    Called after reply is sent to user. Failures are logged but never break chat.
+    """
+    import threading
+    
+    def do_summarize():
+        try:
+            history = get_history(user_id)
+            user_msg_count = conversation_memory.count_user_messages(history)
+            
+            # Skip if not enough messages yet
+            if user_msg_count < conversation_memory.UPDATE_EVERY_N_MESSAGES:
+                return
+            
+            # Skip if we just summarized recently
+            last_count = _last_summarization.get(user_id, 0)
+            if user_msg_count - last_count < conversation_memory.UPDATE_EVERY_N_MESSAGES:
+                return
+            
+            # Get existing memory
+            existing_summary = conversation_memory.get_memory(user_id) or ""
+            
+            # Build summarization prompt
+            recent_msgs = []
+            for msg in history[-20:]:  # Last 20 messages max
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if content and content != "[начало разговора]":
+                    recent_msgs.append(f"{role}: {content}")
+            
+            if not recent_msgs:
+                return
+            
+            recent_text = "\n".join(recent_msgs)
+            
+            # Language-specific summarization prompts
+            prompts = {
+                "ru-RU": (
+                    f"Предыдущая память о пользователе:\n{existing_summary}\n\n"
+                    f"Недавние сообщения:\n{recent_text}\n\n"
+                    "Обнови краткую память (до 800 символов): имена близких, события, "
+                    "здоровье (только как сказал пользователь), настроение, планы, интересы. "
+                    "Только факты. Без домыслов. Без пересказа диалога."
+                ),
+                "he-IL": (
+                    f"זיכרון קודם על המשתמש:\n{existing_summary}\n\n"
+                    f"הודעות אחרונות:\n{recent_text}\n\n"
+                    "עדכן זיכרון תמציתי (עד 800 תווים): שמות של קרובים, אירועים, "
+                    "בריאות (רק כפי שהמשתמש אמר), מצב רוח, תוכניות, תחומי עניין. "
+                    "רק עובדות. ללא השערות. ללא תמלול של הדיאלוג."
+                ),
+                "en-US": (
+                    f"Previous memory about user:\n{existing_summary}\n\n"
+                    f"Recent messages:\n{recent_text}\n\n"
+                    "Update brief memory (up to 800 chars): family names, events, "
+                    "health (only as user said), mood, plans, interests. "
+                    "Facts only. No speculation. No dialogue transcript."
+                ),
+            }
+            
+            prompt = prompts.get(language, prompts["ru-RU"])
+            
+            # Call Claude Haiku for summarization
+            try:
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=300,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                
+                new_summary = response.content[0].text.strip()
+                
+                # Store updated summary
+                if new_summary:
+                    conversation_memory.store_memory(user_id, new_summary)
+                    _last_summarization[user_id] = user_msg_count
+                    # Log only success, never content
+                    logging.info(f"Memory updated for user (len={len(new_summary)})")
+                
+            except Exception as e:
+                # Log only exception type, never content
+                logging.warning(f"Memory summarization failed: {type(e).__name__}")
+        
+        except Exception as e:
+            # Catch-all: log type only
+            logging.warning(f"Memory update error: {type(e).__name__}")
+    
+    # Run in background thread (non-blocking)
+    thread = threading.Thread(target=do_summarize, daemon=True)
+    thread.start()
 
 
 @app.before_request
@@ -449,9 +602,17 @@ def chat():
         profile_id,
         interests,
         avoid_topics,
+        user_id,
     )
 
     history = get_history(user_id)
+    
+    # At session start, check if there's unsummarized history from before
+    if is_greeting:
+        user_msg_count = conversation_memory.count_user_messages(history)
+        if user_msg_count > 0:
+            _summarize_conversation_async(user_id, language)
+    
     if not is_greeting:
         history.append({"role": "user", "content": user_message})
     else:
@@ -469,6 +630,10 @@ def chat():
         budget.allow_tts_for(reply)
         history.append({"role": "assistant", "content": reply})
         trim_history(user_id)
+        
+        # Update memory summary in background (non-blocking, best-effort)
+        if not is_greeting:
+            _summarize_conversation_async(user_id, language)
 
         return jsonify({"reply": reply})
 
@@ -593,6 +758,26 @@ def tts():
         "hint": "Проверьте GOOGLE_API_KEY в Render и Cloud Text-to-Speech API",
         "detail": last_detail,
     }), 500
+
+
+@app.route("/memory/forget", methods=["POST"])
+def memory_forget():
+    """Delete stored conversation memory for a user."""
+    data = request.json or {}
+    user_id = data.get("user_id", "").strip()
+    
+    if not user_id:
+        return jsonify({"ok": False, "error": "user_id required"}), 400
+    
+    success, error = conversation_memory.delete_memory(user_id)
+    if not success:
+        return jsonify({"ok": False, "error": error}), 400
+    
+    # Also clear last summarization tracking
+    if user_id in _last_summarization:
+        del _last_summarization[user_id]
+    
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
