@@ -1667,6 +1667,13 @@
                 body: JSON.stringify({ text: spoken, language: anketa.language })
             });
 
+            if (resp.status === 429) {
+                isSpeaking = false;
+                showReplayButton();
+                if (onEnd) onEnd();
+                return;
+            }
+
             if (!resp.ok) throw new Error("TTS unavailable");
 
             const contentType = resp.headers.get("content-type") || "";

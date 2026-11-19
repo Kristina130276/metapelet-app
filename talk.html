@@ -609,6 +609,14 @@
                     })
                 });
                 
+                if (resp.status === 429) {
+                    isSpeaking = false;
+                    showReplayButton();
+                    setStatus('');
+                    if (onEnd) onEnd();
+                    return;
+                }
+                
                 if (!resp.ok) throw new Error('TTS unavailable');
                 
                 const blob = await resp.blob();
