@@ -337,6 +337,8 @@
         const GREETING_TRIGGER = '__greeting__';
         const PILOT_SESSION_KEY = 'metapelet_pilot_session_id';
         const PILOT_FEEDBACK_DONE_KEY = 'metapelet_pilot_feedback_done';
+        const TRAFFIC_SOURCE_KEY = 'metapelet_traffic_source';
+        const TRAFFIC_CONVERSATION_RECORDED_KEY = 'metapelet_traffic_conversation_recorded';
         
         let profile = null;
         let dialogActive = false;
@@ -350,6 +352,8 @@
         let mpAudio = null;
         let conversationCount = 0;
         let feedbackShown = false;
+        let trafficConversationRecorded = false;
+        let realUserMessageSent = false;
         
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
                       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -441,6 +445,98 @@
                 localStorage.setItem(PILOT_SESSION_KEY, id);
             }
             return id;
+        }
+        
+        const TRAFFIC_VISIT_RECORDED_KEY = 'metapelet_traffic_visit_recorded';
+        
+        function captureTrafficSource() {
+            try {
+                const p = new URLSearchParams(window.location.search);
+                const from = p.get("from") || "";
+                
+                if (!from) return;
+                
+                // Skip tracking for test sessions
+                const sessionId = getPilotSessionId();
+                if (sessionId.startsWith("ps_TEST_")) return;
+                
+                // Store the source
+                localStorage.setItem(TRAFFIC_SOURCE_KEY, from);
+                
+                // Record visit if not already recorded for this source
+                const recorded = localStorage.getItem(TRAFFIC_VISIT_RECORDED_KEY);
+                if (recorded !== from) {
+                    recordTrafficVisit(from, sessionId);
+                    localStorage.setItem(TRAFFIC_VISIT_RECORDED_KEY, from);
+                }
+            } catch (e) {
+                console.warn('traffic capture error', e);
+            }
+        }
+        
+        function getTrafficSource() {
+            try {
+                return localStorage.getItem(TRAFFIC_SOURCE_KEY) || "";
+            } catch (e) {
+                return "";
+            }
+        }
+        
+        async function recordTrafficVisit(source, sessionId) {
+            try {
+                await fetch('/traffic/visit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        source: source,
+                        session_id: sessionId
+                    })
+                });
+            } catch (e) {
+                console.warn('traffic visit', e);
+            }
+        }
+        
+        async function recordTrafficConversation(source, sessionId) {
+            try {
+                await fetch('/traffic/conversation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        source: source,
+                        session_id: sessionId
+                    })
+                });
+            } catch (e) {
+                console.warn('traffic conversation', e);
+            }
+        }
+        
+        function checkAndRecordTrafficConversation() {
+            if (trafficConversationRecorded) return;
+            
+            try {
+                const source = getTrafficSource();
+                if (!source) return;
+                
+                // Skip tracking for test sessions
+                const sessionId = getPilotSessionId();
+                if (sessionId.startsWith("ps_TEST_")) return;
+                
+                // Check if already recorded for this source
+                const recorded = localStorage.getItem(TRAFFIC_CONVERSATION_RECORDED_KEY);
+                if (recorded === source) {
+                    trafficConversationRecorded = true;
+                    return;
+                }
+                
+                // Record it
+                recordTrafficConversation(source, sessionId);
+                localStorage.setItem(TRAFFIC_CONVERSATION_RECORDED_KEY, source);
+                trafficConversationRecorded = true;
+            } catch (e) {
+                console.warn('traffic conversation error', e);
+            }
         }
         
         async function pilotEvent(name, meta) {
@@ -821,10 +917,19 @@
                 
                 const data = await resp.json();
                 awaitingReply = false;
+                
+                // Track conversations for pilot (first message, greeting or real)
                 conversationCount++;
                 if (conversationCount === 1) {
                     pilotEvent('conversation');
                 }
+                
+                // Track traffic conversation only on first real user message (not greeting)
+                if (!isGreeting && !realUserMessageSent) {
+                    realUserMessageSent = true;
+                    checkAndRecordTrafficConversation();
+                }
+                
                 showReply(data.reply);
                 await speakReply(data.reply, () => {
                     if (dialogActive) startListening();
@@ -941,6 +1046,8 @@
         document.getElementById('close-settings-btn').addEventListener('click', hideSettingsModal);
         
         // Initialize
+        captureTrafficSource();
+        
         profile = loadProfile();
         if (!profile || !profile.setupComplete) {
             showError(t('noSetup'));

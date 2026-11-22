@@ -859,6 +859,58 @@
         return getPilotUtm();
     }
 
+    // Traffic source tracking
+    const TRAFFIC_SOURCE_KEY = 'metapelet_traffic_source';
+    const TRAFFIC_VISIT_RECORDED_KEY = 'metapelet_traffic_visit_recorded';
+
+    function captureTrafficSource() {
+        try {
+            const p = new URLSearchParams(window.location.search);
+            const from = p.get("from") || "";
+            
+            if (!from) return;
+            
+            // Skip tracking for test sessions
+            const sessionId = getPilotSessionId();
+            if (sessionId.startsWith("ps_TEST_")) return;
+            
+            // Store the source
+            localStorage.setItem(TRAFFIC_SOURCE_KEY, from);
+            
+            // Record visit if not already recorded for this source
+            const recorded = localStorage.getItem(TRAFFIC_VISIT_RECORDED_KEY);
+            if (recorded !== from) {
+                recordTrafficVisit(from, sessionId);
+                localStorage.setItem(TRAFFIC_VISIT_RECORDED_KEY, from);
+            }
+        } catch (e) {
+            console.warn("traffic capture error", e);
+        }
+    }
+
+    function getTrafficSource() {
+        try {
+            return localStorage.getItem(TRAFFIC_SOURCE_KEY) || "";
+        } catch (e) {
+            return "";
+        }
+    }
+
+    async function recordTrafficVisit(source, sessionId) {
+        try {
+            await fetch("/traffic/visit", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    source: source,
+                    session_id: sessionId
+                })
+            });
+        } catch (e) {
+            console.warn("traffic visit", e);
+        }
+    }
+
     function pilotFlag(name) {
         let flags = {};
         try {
@@ -1775,6 +1827,7 @@
     fillFormFromAnketa();
     setTalkEnabled(false);
     capturePilotUtm();
+    captureTrafficSource();
     pilotEventOnce("site_visit");
     bindAnketaStartedTracking();
 
