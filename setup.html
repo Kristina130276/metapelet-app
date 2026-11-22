@@ -335,6 +335,7 @@
         const ELDER_PROFILE_KEY = 'metapelet_elder_profile';
         const TRAFFIC_SOURCE_KEY = 'metapelet_traffic_source';
         const TRAFFIC_VISIT_RECORDED_KEY = 'metapelet_traffic_visit_recorded';
+        const PILOT_SESSION_KEY = 'metapelet_pilot_session_id';
         let currentLang = 'ru';
         let deferredPrompt = null;
         
@@ -343,30 +344,56 @@
                       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         const isAndroid = /Android/.test(navigator.userAgent);
         
+        function getPilotSessionId() {
+            try {
+                let id = localStorage.getItem(PILOT_SESSION_KEY);
+                if (!id) {
+                    id = 'ps_' + (window.crypto && crypto.randomUUID
+                        ? crypto.randomUUID()
+                        : Math.random().toString(36).slice(2, 12));
+                    localStorage.setItem(PILOT_SESSION_KEY, id);
+                }
+                return id;
+            } catch (e) {
+                return 'ps_' + Math.random().toString(36).slice(2, 12);
+            }
+        }
+        
         // Traffic source tracking
         function captureTrafficSource() {
-            const p = new URLSearchParams(window.location.search);
-            const from = p.get("from") || "";
-            
-            if (from) {
+            try {
+                const p = new URLSearchParams(window.location.search);
+                const from = p.get("from") || "";
+                
+                if (!from) return;
+                
+                // Skip tracking for test sessions
+                const sessionId = getPilotSessionId();
+                if (sessionId.startsWith("ps_TEST_")) return;
+                
                 // Store the source
                 localStorage.setItem(TRAFFIC_SOURCE_KEY, from);
                 
                 // Record visit if not already recorded for this source
                 const recorded = localStorage.getItem(TRAFFIC_VISIT_RECORDED_KEY);
                 if (recorded !== from) {
-                    recordTrafficVisit(from);
+                    recordTrafficVisit(from, sessionId);
                     localStorage.setItem(TRAFFIC_VISIT_RECORDED_KEY, from);
                 }
+            } catch (e) {
+                console.warn("traffic capture error", e);
             }
         }
         
-        async function recordTrafficVisit(source) {
+        async function recordTrafficVisit(source, sessionId) {
             try {
                 await fetch("/traffic/visit", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ source: source })
+                    body: JSON.stringify({ 
+                        source: source,
+                        session_id: sessionId
+                    })
                 });
             } catch (e) {
                 console.warn("traffic visit", e);

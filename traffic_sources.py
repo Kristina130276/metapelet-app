@@ -159,7 +159,7 @@ def init_database():
             
             logger.info("Traffic sources table initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize traffic sources table: {e}")
+        logger.error(f"Failed to initialize traffic sources table: {type(e).__name__}")
 
 
 def sanitize_source(raw_source: str) -> str:
@@ -223,15 +223,20 @@ def _write_traffic_file(data: dict) -> None:
     TRAFFIC_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def record_visit(source: str) -> tuple[bool, str]:
+def record_visit(source: str, session_id: str = "") -> tuple[bool, str]:
     """Record a visit from a traffic source.
     
     Args:
         source: Traffic source identifier (will be sanitized)
+        session_id: Session ID to check for test sessions
         
     Returns:
         (success: bool, error_code: str)
     """
+    # Skip test sessions
+    if session_id.startswith("ps_TEST_"):
+        return True, ""
+    
     clean_source = sanitize_source(source)
     today = _today_date()
     
@@ -266,15 +271,20 @@ def record_visit(source: str) -> tuple[bool, str]:
     return True, ""
 
 
-def record_conversation_started(source: str) -> tuple[bool, str]:
+def record_conversation_started(source: str, session_id: str = "") -> tuple[bool, str]:
     """Record a conversation started from a traffic source.
     
     Args:
         source: Traffic source identifier (will be sanitized)
+        session_id: Session ID to check for test sessions
         
     Returns:
         (success: bool, error_code: str)
     """
+    # Skip test sessions
+    if session_id.startswith("ps_TEST_"):
+        return True, ""
+    
     clean_source = sanitize_source(source)
     today = _today_date()
     
@@ -336,7 +346,7 @@ def get_all_traffic_for_export() -> list[dict]:
                         for row in rows
                     ]
             except Exception as e:
-                logger.error(f"Failed to read traffic from database: {e}")
+                logger.error(f"Failed to read traffic from database: {type(e).__name__}")
                 # Fall through to file fallback
     
     # File fallback

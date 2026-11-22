@@ -642,11 +642,12 @@ def traffic_visit():
     """Record a visit from a traffic source."""
     data = request.json or {}
     source = data.get("source", "")
+    session_id = data.get("session_id", "")
     
     if not source:
         return jsonify({"ok": False, "error": "source required"}), 400
     
-    ok, err = traffic_sources.record_visit(source)
+    ok, err = traffic_sources.record_visit(source, session_id)
     if not ok:
         return jsonify({"ok": False, "error": err}), 400
     
@@ -658,11 +659,12 @@ def traffic_conversation():
     """Record a conversation started from a traffic source."""
     data = request.json or {}
     source = data.get("source", "")
+    session_id = data.get("session_id", "")
     
     if not source:
         return jsonify({"ok": False, "error": "source required"}), 400
     
-    ok, err = traffic_sources.record_conversation_started(source)
+    ok, err = traffic_sources.record_conversation_started(source, session_id)
     if not ok:
         return jsonify({"ok": False, "error": err}), 400
     

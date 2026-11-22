@@ -67,7 +67,7 @@ class TestTrafficSourceTracking(unittest.TestCase):
     
     def test_record_visit(self):
         """Test recording a visit."""
-        ok, err = traffic_sources.record_visit("yt")
+        ok, err = traffic_sources.record_visit("yt", "ps_regular_123")
         self.assertTrue(ok)
         self.assertEqual(err, "")
         
@@ -78,6 +78,16 @@ class TestTrafficSourceTracking(unittest.TestCase):
         self.assertIn("yt", data[today])
         self.assertEqual(data[today]["yt"]["visits"], 1)
         self.assertEqual(data[today]["yt"]["conversations_started"], 0)
+    
+    def test_record_visit_test_session_excluded(self):
+        """Test that visits from test sessions are excluded."""
+        ok, err = traffic_sources.record_visit("yt", "ps_TEST_123")
+        self.assertTrue(ok)
+        self.assertEqual(err, "")
+        
+        # Verify data was NOT written
+        data = traffic_sources._read_traffic_file()
+        self.assertEqual(data, {})
     
     def test_record_multiple_visits(self):
         """Test recording multiple visits increments count."""
@@ -103,7 +113,7 @@ class TestTrafficSourceTracking(unittest.TestCase):
     
     def test_record_conversation_started(self):
         """Test recording a conversation started."""
-        ok, err = traffic_sources.record_conversation_started("yt")
+        ok, err = traffic_sources.record_conversation_started("yt", "ps_regular_456")
         self.assertTrue(ok)
         self.assertEqual(err, "")
         
@@ -114,6 +124,16 @@ class TestTrafficSourceTracking(unittest.TestCase):
         self.assertIn("yt", data[today])
         self.assertEqual(data[today]["yt"]["visits"], 0)
         self.assertEqual(data[today]["yt"]["conversations_started"], 1)
+    
+    def test_record_conversation_test_session_excluded(self):
+        """Test that conversations from test sessions are excluded."""
+        ok, err = traffic_sources.record_conversation_started("yt", "ps_TEST_456")
+        self.assertTrue(ok)
+        self.assertEqual(err, "")
+        
+        # Verify data was NOT written
+        data = traffic_sources._read_traffic_file()
+        self.assertEqual(data, {})
     
     def test_record_multiple_conversations(self):
         """Test recording multiple conversations increments count."""
@@ -254,7 +274,8 @@ class TestTrafficSourceEndpoints(unittest.TestCase):
     def test_traffic_visit_endpoint(self):
         """Test /traffic/visit endpoint."""
         response = self.client.post('/traffic/visit', json={
-            'source': 'yt'
+            'source': 'yt',
+            'session_id': 'ps_regular_123'
         })
         self.assertEqual(response.status_code, 200)
         data = response.json
@@ -264,6 +285,20 @@ class TestTrafficSourceEndpoints(unittest.TestCase):
         traffic_data = traffic_sources._read_traffic_file()
         today = traffic_sources._today_date()
         self.assertEqual(traffic_data[today]['yt']['visits'], 1)
+    
+    def test_traffic_visit_endpoint_test_session_excluded(self):
+        """Test /traffic/visit endpoint excludes test sessions."""
+        response = self.client.post('/traffic/visit', json={
+            'source': 'yt',
+            'session_id': 'ps_TEST_123'
+        })
+        self.assertEqual(response.status_code, 200)
+        data = response.json
+        self.assertTrue(data['ok'])
+        
+        # Verify it was NOT recorded
+        traffic_data = traffic_sources._read_traffic_file()
+        self.assertEqual(traffic_data, {})
     
     def test_traffic_visit_endpoint_missing_source(self):
         """Test /traffic/visit endpoint with missing source."""
@@ -275,7 +310,8 @@ class TestTrafficSourceEndpoints(unittest.TestCase):
     def test_traffic_conversation_endpoint(self):
         """Test /traffic/conversation endpoint."""
         response = self.client.post('/traffic/conversation', json={
-            'source': 'yt'
+            'source': 'yt',
+            'session_id': 'ps_regular_456'
         })
         self.assertEqual(response.status_code, 200)
         data = response.json
@@ -285,6 +321,20 @@ class TestTrafficSourceEndpoints(unittest.TestCase):
         traffic_data = traffic_sources._read_traffic_file()
         today = traffic_sources._today_date()
         self.assertEqual(traffic_data[today]['yt']['conversations_started'], 1)
+    
+    def test_traffic_conversation_endpoint_test_session_excluded(self):
+        """Test /traffic/conversation endpoint excludes test sessions."""
+        response = self.client.post('/traffic/conversation', json={
+            'source': 'yt',
+            'session_id': 'ps_TEST_456'
+        })
+        self.assertEqual(response.status_code, 200)
+        data = response.json
+        self.assertTrue(data['ok'])
+        
+        # Verify it was NOT recorded
+        traffic_data = traffic_sources._read_traffic_file()
+        self.assertEqual(traffic_data, {})
     
     def test_traffic_conversation_endpoint_missing_source(self):
         """Test /traffic/conversation endpoint with missing source."""
@@ -306,10 +356,10 @@ class TestTrafficSourceEndpoints(unittest.TestCase):
     def test_admin_sources_csv_valid_token(self):
         """Test /admin/sources.csv with valid token."""
         # Record some data
-        traffic_sources.record_visit("yt")
-        traffic_sources.record_visit("yt")
-        traffic_sources.record_conversation_started("yt")
-        traffic_sources.record_visit("ig")
+        traffic_sources.record_visit("yt", "ps_regular_1")
+        traffic_sources.record_visit("yt", "ps_regular_2")
+        traffic_sources.record_conversation_started("yt", "ps_regular_1")
+        traffic_sources.record_visit("ig", "ps_regular_3")
         
         response = self.client.get('/admin/sources.csv?token=test_admin_token_123')
         self.assertEqual(response.status_code, 200)
