@@ -17,6 +17,7 @@ import pilot_tracking as pilot
 import budget_guard as budget
 import tts_budget
 import conversation_memory
+import traffic_sources
 
 app = Flask(__name__)
 CORS(app)
@@ -29,6 +30,7 @@ if not logging.getLogger().hasHandlers():
 pilot.init_database()
 tts_budget.init_database()
 conversation_memory.init_database()
+traffic_sources.init_database()
 
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -591,6 +593,80 @@ def admin_feedback_csv():
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=metapelet-feedback.csv"}
     )
+
+
+@app.route("/admin/sources.csv", methods=["GET"])
+def admin_sources_csv():
+    """Export traffic source data as CSV. Protected by ADMIN_TOKEN env var."""
+    admin_token = os.environ.get("ADMIN_TOKEN", "").strip()
+    if not admin_token:
+        return "Endpoint disabled. Set ADMIN_TOKEN environment variable.", 404
+    
+    # Check token from query parameter or Authorization header
+    provided_token = request.args.get("token", "")
+    if not provided_token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            provided_token = auth_header[7:]
+    
+    if provided_token.strip() != admin_token:
+        return "Unauthorized. Invalid or missing token.", 403
+    
+    # Get all traffic source data
+    traffic_rows = traffic_sources.get_all_traffic_for_export()
+    
+    # Generate CSV
+    import csv
+    import io
+    
+    output = io.StringIO()
+    if traffic_rows:
+        fieldnames = ["date", "source", "visits", "conversations_started"]
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in traffic_rows:
+            writer.writerow(row)
+    else:
+        output.write("# No traffic source data available\n")
+    
+    csv_content = output.getvalue()
+    return Response(
+        csv_content,
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=metapelet-sources.csv"}
+    )
+
+
+@app.route("/traffic/visit", methods=["POST"])
+def traffic_visit():
+    """Record a visit from a traffic source."""
+    data = request.json or {}
+    source = data.get("source", "")
+    
+    if not source:
+        return jsonify({"ok": False, "error": "source required"}), 400
+    
+    ok, err = traffic_sources.record_visit(source)
+    if not ok:
+        return jsonify({"ok": False, "error": err}), 400
+    
+    return jsonify({"ok": True})
+
+
+@app.route("/traffic/conversation", methods=["POST"])
+def traffic_conversation():
+    """Record a conversation started from a traffic source."""
+    data = request.json or {}
+    source = data.get("source", "")
+    
+    if not source:
+        return jsonify({"ok": False, "error": "source required"}), 400
+    
+    ok, err = traffic_sources.record_conversation_started(source)
+    if not ok:
+        return jsonify({"ok": False, "error": err}), 400
+    
+    return jsonify({"ok": True})
 
 
 @app.route("/chat", methods=["POST"])

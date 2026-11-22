@@ -333,6 +333,8 @@
     
     <script>
         const ELDER_PROFILE_KEY = 'metapelet_elder_profile';
+        const TRAFFIC_SOURCE_KEY = 'metapelet_traffic_source';
+        const TRAFFIC_VISIT_RECORDED_KEY = 'metapelet_traffic_visit_recorded';
         let currentLang = 'ru';
         let deferredPrompt = null;
         
@@ -340,6 +342,36 @@
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
                       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         const isAndroid = /Android/.test(navigator.userAgent);
+        
+        // Traffic source tracking
+        function captureTrafficSource() {
+            const p = new URLSearchParams(window.location.search);
+            const from = p.get("from") || "";
+            
+            if (from) {
+                // Store the source
+                localStorage.setItem(TRAFFIC_SOURCE_KEY, from);
+                
+                // Record visit if not already recorded for this source
+                const recorded = localStorage.getItem(TRAFFIC_VISIT_RECORDED_KEY);
+                if (recorded !== from) {
+                    recordTrafficVisit(from);
+                    localStorage.setItem(TRAFFIC_VISIT_RECORDED_KEY, from);
+                }
+            }
+        }
+        
+        async function recordTrafficVisit(source) {
+            try {
+                await fetch("/traffic/visit", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ source: source })
+                });
+            } catch (e) {
+                console.warn("traffic visit", e);
+            }
+        }
         
         function setLanguage(lang) {
             currentLang = lang;
@@ -456,6 +488,9 @@
                 console.warn('Invalid profile data');
             }
         }
+        
+        // Capture traffic source
+        captureTrafficSource();
         
         // Set initial language
         setLanguage('ru');
